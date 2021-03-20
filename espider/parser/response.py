@@ -14,8 +14,8 @@ import re
 import time
 from urllib.parse import urlparse, urlunparse, urljoin
 
-from espider.tools import search
-from espider.utils_from.bs4_dammit import UnicodeDammit
+from espider.utils.tools import search
+from espider.utils.bs4_dammit import UnicodeDammit
 from espider.parser.selector import Selector
 from requests.cookies import RequestsCookieJar
 from requests.models import Response as res

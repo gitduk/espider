@@ -1,4 +1,4 @@
-from espider.tools import PriorityQueue
+from espider.utils.tools import PriorityQueue
 from espider.network.request import RequestThread
 import threading
 from queue import Queue

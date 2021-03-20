@@ -2,7 +2,7 @@ import logging
 import random
 import urllib3
 from requests.cookies import cookiejar_from_dict, merge_cookies
-from espider.tools import *
+from espider.utils.tools import *
 from espider.settings import USER_AGENT_LIST, __REQUEST_KEYS__
 from espider.network.request import RequestThread
 
