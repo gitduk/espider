@@ -539,7 +539,7 @@ class UnicodeDammit:
         b'\xd8': 'O',
         b'\xd9': 'U',
         b'\xda': 'U',
-        b'\xdb': 'U',
+        b'\xdbs': 'U',
         b'\xdc': 'U',
         b'\xdd': 'Y',
         b'\xde': 'b',
