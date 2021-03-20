@@ -18,12 +18,11 @@ URL = 'https://github.com/gitduk/espider'
 EMAIL = 'wdkany@gmail.com'
 AUTHOR = 'kaige'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    'requests', 'parsel', 'pymysql', 'six', 'lxml', 'w3lib',
-    'idna', 'urllib3', 'cssselect', 'charset', 'certifi'
+    'requests', 'parsel', 'pymysql', 'lxml', 'w3lib'
 ]
 
 # What packages are optional?
