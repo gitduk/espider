@@ -1,5 +1,7 @@
 import os
+from threading import RLock
 
+lock = RLock()
 
 class OpenCsv(object):
     def __init__(self, path, mode=None, delimiter=None):

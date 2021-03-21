@@ -1,10 +1,10 @@
 import json
 
+import threading
+from queue import Queue
 from espider.utils.tools import PriorityQueue
 from espider.network.request import RequestThread
-import threading
-from espider.dbs.easy_redis import RequestFilter
-from queue import Queue
+from espider.extensions.download_extension import RequestFilter
 
 
 class Downloader(object):
