@@ -127,12 +127,12 @@ class BaseSpider(object):
 
     def thread(self, url=None, callback=None, args=None, priority=None, **kwargs):
 
-        self.url = url
+        if url: self.url = url
         return self.create_thread(
             url=self.url,
             method=self.method,
             data=self.body,
-            json=self.json_dict or None,
+            json=self.json_dict,
             headers=self.headers,
             cookies=self.cookies,
             priority=priority,
@@ -147,8 +147,8 @@ class BaseSpider(object):
             **self.request_kwargs,
             'url': url,
             'method': method or 'GET',
-            'data': data,
-            'json': json,
+            'data': data or '',
+            'json': json or {},
             'headers': headers or self.headers,
             'cookies': cookies,
             'priority': priority,
