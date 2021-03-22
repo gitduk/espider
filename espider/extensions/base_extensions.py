@@ -1,3 +1,5 @@
+import json
+
 import redis
 
 
@@ -23,3 +25,22 @@ class RequestFilter(redis.client.Redis):
 
         self.set_key = set_key or 'urls'
         self.timeout = timeout
+
+    def __call__(self, request, *args, **kwargs):
+        skey = self.set_key
+
+        if self.timeout:
+            if self.exists(skey) and self.ttl(skey) == -1:
+                self.expire(skey, self.timeout)
+
+        kwargs = {
+            'url': request.url,
+            'method': request.method,
+            'body': request.request_kwargs.get('data'),
+            'json': request.request_kwargs.get('json')
+        }
+        code = self.sadd(skey, json.dumps(kwargs))
+        if not code:
+            print(f'<RequestFilter Drop>: {json.dumps(kwargs)}')
+        else:
+            return request

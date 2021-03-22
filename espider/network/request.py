@@ -2,6 +2,7 @@ import requests
 import threading
 from espider.parser.response import Response
 from espider.settings import __REQUEST_KEYS__
+from espider.utils.tools import args_split
 
 
 class RequestThread(threading.Thread):
@@ -59,14 +60,9 @@ class RequestThread(threading.Thread):
             response_pro = Response(response)
             self.response = response_pro
 
-            if self.args:
-                if not isinstance(self.args, tuple): self.args = (self.args,)
-                func_args = (_ for _ in self.args if not isinstance(_, dict))
-                func_kwargs = [_ for _ in self.args if isinstance(_, dict)]
-                func_kwargs = func_kwargs[0] if func_kwargs else {}
-            else:
-                func_args, func_kwargs = (), {}
-            if self.callback: self.callback(response_pro, *func_args, **func_kwargs)
+            if not isinstance(self.args, tuple): self.args = (self.args,)
+            args, kwargs = args_split(self.args)
+            if self.callback: self.callback(response_pro, *args, **kwargs)
 
     def __repr__(self):
         return "<%s(%s, %s)>" % (self.__class__.__name__, self.name, self.priority)

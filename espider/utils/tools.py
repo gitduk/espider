@@ -5,6 +5,7 @@ import json as Json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Callable
+from inspect import isfunction
 
 
 class PriorityQueue:
@@ -340,6 +341,19 @@ def merge(*args, overwrite=False):
         default_dict[k].append(merge(*v, overwrite=overwrite))
 
     return {k: v[0] if k in v_dict.keys() else v for k, v in dict(default_dict).items()}
+
+
+def args_split(args: tuple):
+    arg = (i for i in args if not isinstance(i, dict))
+    kwarg = [i for i in args if isinstance(i, dict)]
+
+    if len(kwarg) >= 1:
+        _kwargs = {}
+        for i in kwarg:
+            _kwargs.update(i)
+        kwarg = _kwargs
+
+    return arg, kwarg or {}
 
 
 class DictFactory(object):
