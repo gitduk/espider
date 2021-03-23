@@ -1,6 +1,7 @@
 import json
-
 import redis
+from w3lib.url import canonicalize_url
+from espider.utils.tools import get_md5
 
 
 class RequestFilter(redis.client.Redis):
@@ -39,8 +40,25 @@ class RequestFilter(redis.client.Redis):
             'body': request.request_kwargs.get('data'),
             'json': request.request_kwargs.get('json')
         }
-        code = self.sadd(skey, json.dumps(kwargs))
+        code = self.sadd(skey, self._fingerprint(request))
         if not code:
             print(f'<RequestFilter Drop>: {json.dumps(kwargs)}')
         else:
             return request
+
+    @staticmethod
+    def _fingerprint(request):
+        """
+        request唯一表识
+        @return:
+        """
+        url = request.url
+        # url 归一化
+        url = canonicalize_url(url)
+        args = [url]
+
+        for arg in ["params", "data", "files", "auth", "cert", "json"]:
+            if request.requests_kwargs.get(arg):
+                args.append(request.requests_kwargs.get(arg))
+
+        return get_md5(*args)

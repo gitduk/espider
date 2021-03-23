@@ -1,3 +1,4 @@
+import hashlib
 import heapq
 import time
 from functools import wraps
@@ -5,7 +6,6 @@ import json as Json
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Callable
-from inspect import isfunction
 
 
 class PriorityQueue:
@@ -375,3 +375,19 @@ class DictFactory(object):
 
     def delete(self, *args, data=None, target_type=None):
         return delete(*args, data=data, target_type=target_type)
+
+
+def get_md5(*args):
+    """
+    @summary: 获取唯一的32位md5
+    ---------
+    @param *args: 参与联合去重的值
+    ---------
+    @result: 7c8684bcbdfcea6697650aa53d7b1405
+    """
+
+    m = hashlib.md5()
+    for arg in args:
+        m.update(str(arg).encode())
+
+    return m.hexdigest()

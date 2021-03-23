@@ -24,3 +24,8 @@ __REQUEST_KEYS__ = [
     'auth', 'timeout', 'allow_redirects', 'proxies',
     'hooks', 'stream', 'verify', 'cert', 'json'
 ]
+
+try:
+    from setting import *
+except:
+    pass
