@@ -1,4 +1,5 @@
 import time
+from collections.abc import Generator
 import requests
 import threading
 from queue import Queue
@@ -27,6 +28,8 @@ class Request(threading.Thread):
         # 必要参数
         self.url = url
         self.method = method.upper() or 'GET'
+        self.downloader = kwargs.get('downloader')
+        if type(self.downloader).__name__ == 'type': raise TypeError('downloader must be a Downloader instance')
         assert self.method in DEFAULT_METHOD_VALUE, f'Invalid method {method}'
 
         # 请求参数
@@ -70,10 +73,16 @@ class Request(threading.Thread):
             if not isinstance(self.args, tuple): self.args = (self.args,)
             args, kwargs = args_split(deepcopy(self.args))
             if self.callback:
-                try:
-                    self.callback(response_pro, *args, **kwargs)
-                except Exception as e:
-                    print(e)
+                generator = self.callback(response_pro, *args, **kwargs)
+                if not isinstance(generator, Generator):
+                    raise TypeError(f'{self.callback.__name__} must be a generator')
+                for _ in generator:
+                    if isinstance(_, Request):
+                        self.downloader.push(_)
+                    elif isinstance(_, (dict, tuple)):
+                        self.downloader.push_item(_)
+                    else:
+                        raise TypeError(f'{self.callback.__name__} must yield a dict or a Request object')
 
     def __repr__(self):
         return "<%s(%s, %s)>" % (self.__class__.__name__, self.name, self.priority)
@@ -82,8 +91,10 @@ class Request(threading.Thread):
 class Downloader(object):
     __settings__ = ['wait_time', 'max_thread', 'extensions']
 
-    def __init__(self, max_thread=None, wait_time=0):
+    def __init__(self, max_thread=None, wait_time=0, callback=None):
         self.thread_pool = PriorityQueue()
+        self.item_pool = Queue()
+        self.callback = callback
         self.max_thread = max_thread or 10
         self.running_thread = Queue()
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0}
@@ -93,6 +104,9 @@ class Downloader(object):
     def push(self, request):
         assert isinstance(request, Request), f'task must be {type(Request)}'
         self.thread_pool.push(request, request.priority)
+
+    def push_item(self, item):
+        self.item_pool.put(item)
 
     def add_extension(self, extension, *args, **kwargs):
         if type(extension).__name__ == 'type':
@@ -110,14 +124,14 @@ class Downloader(object):
     def _finish(self):
         finish = False
         for i in range(3):
-            if self.thread_pool.empty() and self.running_thread.empty():
+            if self.thread_pool.empty() and self.running_thread.empty() and self.item_pool.empty():
                 finish = True
             else:
                 finish = False
 
         return finish
 
-    def start(self):
+    def distribute_task(self):
         while not self._finish():
             if self.max_thread and threading.active_count() > self.max_thread:
                 request = None
@@ -131,10 +145,32 @@ class Downloader(object):
                     time.sleep(1)
                     continue
 
-            if request: self._start_request(request)
+            if request:
+                yield self._start_request(request)
+
+            item = self.item_pool.get_nowait()
+            if item:
+                item, args, kwargs = self._process_callback_args(item)
+                yield self.callback(item, *args, **kwargs)
 
         msg = f'All task is done. Success:{self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}'
         print(msg)
+
+    def start(self):
+        for _ in self.distribute_task():
+            if self._finish(): break
+
+    @staticmethod
+    def _process_callback_args(args):
+        if isinstance(args, dict):
+            return args, (), {}
+        elif isinstance(args, tuple):
+            data = args[0]
+            assert isinstance(data, dict), 'yield item, args, kwargs,  item be a dict'
+            args, kwargs = args_split(args[1:])
+            return data, args, kwargs
+        else:
+            raise TypeError(f'Invalid item {args}, yield item, args, kwargs')
 
     def _start_request(self, request):
         assert isinstance(request, Request)
@@ -172,3 +208,14 @@ class Downloader(object):
                 self.count['Retry'] += request.retry_count
             else:
                 self.count['Failed'] += 1
+
+
+def call(response):
+    yield {'name': 'hi'}
+
+
+d = Downloader()
+url = 'https://blog.csdn.net/qq_43593912/article/details/97123701'
+re = Request(url, callback=call, downloader=d)
+re.start()
+print(d.item_pool.get())

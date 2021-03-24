@@ -50,7 +50,7 @@ class Spider(object):
         self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
         self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
 
-        self.downloader = Downloader(**self.downloader_setting)
+        self.downloader = Downloader(**self.downloader_setting, callback=self.process_item)
 
     def _init_header(self):
         if self.method == 'POST':
@@ -192,6 +192,9 @@ class Spider(object):
         self.downloader.start()
 
     def parse(self, response, *args, **kwargs):
+        pass
+
+    def process_item(self, item, *args, **kwargs):
         pass
 
     def __repr__(self):
