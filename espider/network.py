@@ -265,6 +265,6 @@ class Downloader(object):
             request.join()
             if request.success:
                 self.count['Success'] += 1
-                self.count['Retry'] += request.retry_times
+                self.count['Retry'] += request.retry_count
             else:
                 self.count['Failed'] += 1
