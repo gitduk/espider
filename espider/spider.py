@@ -3,6 +3,7 @@ from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
 from requests.sessions import Session
+from espider.parser.response import Response
 
 from espider.settings import Setting
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
@@ -50,7 +51,12 @@ class Spider(object):
         self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
         self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
 
-        self.downloader = Downloader(**self.downloader_setting, callback=self.process_item)
+        self.downloader = Downloader(
+            **self.downloader_setting,
+            item_callback=self.item_pipeline,
+            response_callback=self.response_pipeline,
+            request_callback=self.request_pipeline
+        )
 
     def _init_header(self):
         if self.method == 'POST':
@@ -155,12 +161,13 @@ class Spider(object):
             'cookies': cookies,
             'priority': priority,
             'callback': callback or self.parse,
+            'downloader': self.downloader,
             'args': args,
             'session': self.session if use_session else None,
             **self.request_setting,
             **kwargs,
         }
-        self.downloader.push(Request(**request_kwargs))
+        return Request(**request_kwargs)
 
     def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
                      priority=None, use_session=False, **kwargs):
@@ -180,21 +187,36 @@ class Spider(object):
             **kwargs
         )
 
+    def request_from_response(self, response):
+        isinstance(response, Response)
+        return self.request(**response.request_kwargs)
+
     @staticmethod
     def start_requests():
-        pass
+        """
+        起点
+        """
+        yield ...
 
     def run(self):
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 
-        self.start_requests()
+        for request in self.start_requests():
+            self.downloader.push(request)
+
         self.downloader.start()
 
     def parse(self, response, *args, **kwargs):
         pass
 
-    def process_item(self, item, *args, **kwargs):
+    def item_pipeline(self, item, *args, **kwargs):
+        pass
+
+    def response_pipeline(self, response, *args, **kwargs):
+        pass
+
+    def request_pipeline(self, request, *args, **kwargs):
         pass
 
     def __repr__(self):
