@@ -1,6 +1,5 @@
 import json
 import os
-from pprint import pprint
 
 
 class Setting(object):
@@ -29,5 +28,4 @@ class Setting(object):
             self.__dict__[key] = kwargs
 
     def __repr__(self):
-        pprint({k: v for k, v in self.__dict__.items() if k in self.__setting_module_list__})
-        return ''
+        return json.dumps({k: v for k, v in self.__dict__.items() if k in self.__setting_module_list__})

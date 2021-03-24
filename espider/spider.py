@@ -15,6 +15,15 @@ class Spider(object):
     更新 url，data，body，headers，cookies等参数，并创建请求线程
     """
 
+    __custom_setting__ = {
+        'downloader': {
+            'max_thread': 10
+        },
+        'request': {
+            'max_retry': 3
+        }
+    }
+
     def __init__(
             self,
             url=None,
@@ -47,6 +56,8 @@ class Spider(object):
 
         # 加载 setting
         self.setting = Setting()
+        self.setting.__dict__.update(self.__custom_setting__)
+
         # 加载 downloader setting
         self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
         self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
