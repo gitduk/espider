@@ -22,6 +22,12 @@ class Setting(object):
     def get(self, key, option=None):
         return self.__dict__.get(key, option)
 
+    def update(self, key, **kwargs):
+        if key in self.__dict__.keys() and isinstance(self.__dict__.get(key), dict):
+            self.__dict__[key].update(kwargs)
+        else:
+            self.__dict__[key] = kwargs
+
     def __repr__(self):
         pprint({k: v for k, v in self.__dict__.items() if k in self.__setting_module_list__})
         return ''

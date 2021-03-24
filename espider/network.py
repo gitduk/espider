@@ -41,8 +41,11 @@ class Request(threading.Thread):
         self.session = kwargs.get('session')
         self.retry_count = 0
         self.args = args or ()
+        self.is_start = False
+        self.success = False
 
     def run(self):
+        self.is_start = True
         start = time.time()
         if self.session:
             assert isinstance(self.session, requests.sessions.Session)
@@ -51,20 +54,26 @@ class Request(threading.Thread):
         else:
             response = requests.request(method=self.method, url=self.url, **self.request_kwargs)
 
-        if response.status_code != 200 and self.max_retry > 0:
-            self.max_retry -= 1
-            self.run()
+        if response.status_code != 200 and self.retry_count < self.max_retry:
             self.retry_count += 1
-            msg = f'Retry-{self.priority}: [{self.method.upper()}] {response.url} {response.request.body or ""} {response.status_code}'
+            msg = f'Retry-{self.retry_count}: [{self.method.upper()}] {response.url} {response.request.body or ""} {response.status_code}'
             print(msg)
+            self.run()
         else:
+            if response.status_code == 200: self.success = True
+
             response_pro = Response(response)
             setattr(response_pro, 'cost_time', '{:.3f}'.format(time.time() - start))
+            setattr(response_pro, 'retry_count', self.retry_count)
             self.response = response_pro
 
             if not isinstance(self.args, tuple): self.args = (self.args,)
             args, kwargs = args_split(deepcopy(self.args))
-            if self.callback: self.callback(response_pro, *args, **kwargs)
+            if self.callback:
+                try:
+                    self.callback(response_pro, *args, **kwargs)
+                except Exception as e:
+                    print(e)
 
     def __repr__(self):
         return "<%s(%s, %s)>" % (self.__class__.__name__, self.name, self.priority)
@@ -77,7 +86,7 @@ class Downloader(object):
         self.thread_pool = PriorityQueue()
         self.max_thread = max_thread or 10
         self.running_thread = Queue()
-        self.download_number = 0
+        self.count = {'Success': 0, 'Retry': 0, 'Failed': 0}
         self.extensions = []
         self.wait_time = wait_time
 
@@ -101,7 +110,7 @@ class Downloader(object):
     def _finish(self):
         finish = False
         for i in range(3):
-            if self.thread_pool.empty():
+            if self.thread_pool.empty() and self.running_thread.empty():
                 finish = True
             else:
                 finish = False
@@ -109,47 +118,57 @@ class Downloader(object):
         return finish
 
     def start(self):
-        while not self.thread_pool.empty():
+        while not self._finish():
             if self.max_thread and threading.active_count() > self.max_thread:
                 request = None
                 self._join_thread()
             else:
-                request = self.thread_pool.pop()
+                try:
+                    request = self.thread_pool.pop()
+                except IndexError:
+                    self._join_thread()
+                    print('Waiting task ...')
+                    time.sleep(1)
+                    continue
 
-            if request:
-                assert isinstance(request, Request)
+            if request: self._start_request(request)
 
-                if self.extensions:
-                    for _ in self.extensions:
-                        extension, args, kwargs = _.get('extension'), _.get('args'), _.get('kwargs')
-                        if request:
-                            if args and kwargs:
-                                request = extension(request, *args, **kwargs)
-                            elif args:
-                                request = extension(request, *args)
-                            elif kwargs:
-                                request = extension(request, **kwargs)
-                            else:
-                                request = extension(request)
+        msg = f'All task is done. Success:{self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}'
+        print(msg)
 
-                            _['count'] += 1
+    def _start_request(self, request):
+        assert isinstance(request, Request)
 
-                    assert isinstance(
-                        request, Request
-                    ) or not request, 'Extensions must return RequestThread or None'
-
+        if self.extensions:
+            for _ in self.extensions:
+                extension, args, kwargs = _.get('extension'), _.get('args'), _.get('kwargs')
                 if request:
-                    time.sleep(self.wait_time + request.retry_count * 0.1)
-                    if not request.is_alive(): request.start()
-                    self.running_thread.put(request)
-                    self.download_number += 1
+                    if args and kwargs:
+                        request = extension(request, *args, **kwargs)
+                    elif args:
+                        request = extension(request, *args)
+                    elif kwargs:
+                        request = extension(request, **kwargs)
+                    else:
+                        request = extension(request)
 
-        if not self.running_thread.empty():
-            self._join_thread()
+                    _['count'] += 1
 
-        print(f'All task is done, download count:{self.download_number}')
+            assert isinstance(
+                request, Request
+            ) or not request, 'Extensions must return RequestThread or None'
+
+        if request:
+            time.sleep(self.wait_time + request.retry_count * 0.1)
+            if not request.is_start: request.start()
+            self.running_thread.put(request)
 
     def _join_thread(self):
         while not self.running_thread.empty():
             request = self.running_thread.get()
             request.join()
+            if request.success:
+                self.count['Success'] += 1
+                self.count['Retry'] += request.retry_count
+            else:
+                self.count['Failed'] += 1

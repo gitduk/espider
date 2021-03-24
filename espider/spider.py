@@ -1,5 +1,3 @@
-from collections.abc import Generator
-from threading import Thread
 from espider.default_settings import *
 from espider.network import Request, Downloader
 import random
@@ -11,7 +9,7 @@ from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers
     dict_to_json, update
 
 
-class BaseSpider(object):
+class Spider(object):
     """
     更新 url，data，body，headers，cookies等参数，并创建请求线程
     """
@@ -46,6 +44,14 @@ class BaseSpider(object):
         self.use_session = use_session
         self.session = Session() if self.use_session else None
 
+        # 加载 setting
+        self.setting = Setting()
+        # 加载 downloader setting
+        self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
+        self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
+
+        self.downloader = Downloader(**self.downloader_setting)
+
     def _init_header(self):
         if self.method == 'POST':
             content_type = 'application/x-www-form-urlencoded; charset=UTF-8'
@@ -56,17 +62,20 @@ class BaseSpider(object):
 
     @property
     def url(self):
-        protocol = self.spider['url'].get('protocol')
-        domain = self.spider['url'].get('domain')
-        path = '/'.join(self.spider['url'].get('path'))
-        _param = self.spider['url'].get('param')
+        if self.spider['url']:
+            protocol = self.spider['url'].get('protocol')
+            domain = self.spider['url'].get('domain')
+            path = '/'.join(self.spider['url'].get('path'))
+            _param = self.spider['url'].get('param')
 
-        if len(_param) == 1 and len(set(list(_param.items())[0])) == 1:
-            param = list(_param.values())[0]
+            if len(_param) == 1 and len(set(list(_param.items())[0])) == 1:
+                param = list(_param.values())[0]
+            else:
+                param = dict_to_body(_param)
+
+            return f'{protocol}://{domain}/{path}?{param}'.strip('?')
         else:
-            param = dict_to_body(_param)
-
-        return f'{protocol}://{domain}/{path}?{param}'.strip('?')
+            return ''
 
     @url.setter
     def url(self, url):
@@ -145,12 +154,13 @@ class BaseSpider(object):
             'headers': headers or self.headers,
             'cookies': cookies,
             'priority': priority,
-            'callback': callback,
+            'callback': callback or self.parse,
             'args': args,
             'session': self.session if use_session else None,
+            **self.request_setting,
             **kwargs,
         }
-        return Request(**request_kwargs)
+        self.downloader.push(Request(**request_kwargs))
 
     def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
                      priority=None, use_session=False, **kwargs):
@@ -161,7 +171,7 @@ class BaseSpider(object):
             method='POST',
             data=data,
             json=json,
-            headers=headers or self.headers,
+            headers=headers,
             cookies=cookies,
             callback=callback,
             args=args,
@@ -170,44 +180,20 @@ class BaseSpider(object):
             **kwargs
         )
 
-    def __repr__(self):
-        msg = f'{type(self).__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'
-        return msg
-
-
-class Spider(BaseSpider, Thread):
-    def __init__(self, *args, **kwargs):
-        super(Spider, self).__init__(*args, **kwargs)
-        super(BaseSpider, self).__init__()
-
-        # 加载 setting
-        self.setting = Setting()
-
-        # 加载 downloader setting
-        downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
-        self.downloader = Downloader(**downloader_setting)
-
     @staticmethod
     def start_requests():
-        yield ...
+        pass
 
     def run(self):
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 
-        if isinstance(self.start_requests, Generator):
-            raise ValueError("函数 start_requests 必须是生成器: yield Request")
-
-        for request in self.start_requests():
-            if not isinstance(request, Request):
-                raise ValueError("仅支持 yield Request")
-
-            if not request.callback:
-                request.callback = self.parse
-
-            self.downloader.push(request)
-
+        self.start_requests()
         self.downloader.start()
 
     def parse(self, response, *args, **kwargs):
         pass
+
+    def __repr__(self):
+        msg = f'{type(self).__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'
+        return msg

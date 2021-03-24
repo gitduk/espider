@@ -344,7 +344,7 @@ def merge(*args, overwrite=False):
 
 
 def args_split(args: tuple):
-    arg = (i for i in args if not isinstance(i, dict))
+    arg = [i for i in args if not isinstance(i, dict)]
     kwarg = [i for i in args if isinstance(i, dict)]
 
     if len(kwarg) >= 1:
