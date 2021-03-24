@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 from espider.default_settings import *
 from espider.network import Request, Downloader
 import random
@@ -17,7 +19,7 @@ class Spider(object):
 
     __custom_setting__ = {
         'downloader': {
-            'max_thread': 1
+            'max_thread': 10
         },
         'request': {
             'max_retry': 3
@@ -213,6 +215,8 @@ class Spider(object):
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 
+        request_generator = self.start_requests()
+        assert isinstance(request_generator, Generator), 'function start_requests must be a generator'
         for request in self.start_requests():
             self.downloader.push(request)
 
@@ -229,6 +233,11 @@ class Spider(object):
 
     def request_pipeline(self, request, *args, **kwargs):
         pass
+
+    @staticmethod
+    def save_html(response, path=None):
+        with open(path or './auto.html', 'w') as f:
+            f.write(response.text)
 
     def __repr__(self):
         msg = f'{type(self).__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'
