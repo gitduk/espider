@@ -17,7 +17,7 @@ class Spider(object):
 
     __custom_setting__ = {
         'downloader': {
-            'max_thread': 10
+            'max_thread': 1
         },
         'request': {
             'max_retry': 3
