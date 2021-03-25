@@ -17,8 +17,8 @@ class PriorityQueue:
         heapq.heappush(self._queue, (-priority, self.index, item))
         self.index += 1
 
-    def pop(self):
-        return heapq.heappop(self._queue)[-1]
+    def pop(self, default=None):
+        return heapq.heappop(self._queue)[-1] if self._queue else default
 
     def empty(self):
         return True if not self._queue else False
@@ -344,7 +344,7 @@ def merge(*args, overwrite=False):
 
 
 def args_split(args: tuple):
-    arg = [i for i in args if not isinstance(i, dict)]
+    arg = tuple(i for i in args if not isinstance(i, dict))
     kwarg = [i for i in args if isinstance(i, dict)]
 
     if len(kwarg) >= 1:

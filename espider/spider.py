@@ -67,8 +67,7 @@ class Spider(object):
         self.downloader = Downloader(
             **self.downloader_setting,
             item_callback=self.item_pipeline,
-            response_callback=self.response_pipeline,
-            request_callback=self.request_pipeline
+            end_callback=self.end,
         )
 
     def _init_header(self):
@@ -161,8 +160,9 @@ class Spider(object):
         if hasattr(response, 'cookies'):
             self.spider['cookies'] = merge_cookies(self.spider.get('cookies'), response.cookies)
 
-    def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
-                priority=None, use_session=False, **kwargs):
+    def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
+                error_callback=None, failed_callback=None, retry_callback=None, args=None, priority=None,
+                use_session=False, **kwargs):
 
         request_kwargs = {
             **self.request_kwargs,
@@ -174,6 +174,9 @@ class Spider(object):
             'cookies': cookies,
             'priority': priority,
             'callback': callback or self.parse,
+            'retry_callback': retry_callback or self.retry_pipeline,
+            'failed_callback': failed_callback or self.failed_pipeline,
+            'error_callback': error_callback or self.error_pipeline,
             'downloader': self.downloader,
             'args': args,
             'session': self.session if use_session else None,
@@ -182,8 +185,9 @@ class Spider(object):
         }
         return Request(**request_kwargs)
 
-    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
-                     priority=None, use_session=False, **kwargs):
+    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None,
+                     error_callback=None, failed_callback=None, retry_callback=None, args=None, priority=None,
+                     use_session=False, **kwargs):
 
         return self.request(
             self,
@@ -194,6 +198,9 @@ class Spider(object):
             headers=headers,
             cookies=cookies,
             callback=callback,
+            retry_callback=retry_callback,
+            failed_callback=failed_callback,
+            error_callback=error_callback,
             args=args,
             priority=priority,
             use_session=use_session,
@@ -225,13 +232,20 @@ class Spider(object):
     def parse(self, response, *args, **kwargs):
         pass
 
+    def retry_pipeline(self, request, *args, **kwargs):
+        print(f'Retry-{request.retry_count}: {request.request_kwargs}')
+        return request
+
+    def error_pipeline(self, exception, *args, **kwargs):
+        print(f'Request Error ... {exception}, args: {args}, kwargs: {kwargs}')
+
+    def failed_pipeline(self, response, *args, **kwargs):
+        print(f'Request Failed ... {response} Retry: {response.retry_times} args: {args} kwargs: {kwargs}')
+
     def item_pipeline(self, item, *args, **kwargs):
         pass
 
-    def response_pipeline(self, response, *args, **kwargs):
-        pass
-
-    def request_pipeline(self, request, *args, **kwargs):
+    def end(self):
         pass
 
     @staticmethod
