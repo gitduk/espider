@@ -18,7 +18,7 @@ URL = 'https://github.com/gitduk/espider'
 EMAIL = 'wdkany@gmail.com'
 AUTHOR = 'kaige'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = '0.2.2'
+VERSION = '0.3.3'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
