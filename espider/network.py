@@ -30,7 +30,7 @@ class Request(threading.Thread):
         self.method = method.upper() or 'GET'
         self.downloader = kwargs.get('downloader')
         if type(self.downloader).__name__ == 'type':
-            raise TypeError(f'downloader must be a Downloader instance, get {type(self.downloader).__name__}')
+            raise TypeError(f'downloader must be a Downloader object, get {self.downloader.__name__} class')
         assert self.method in DEFAULT_METHOD_VALUE, f'Invalid method {method}'
 
         # 请求参数
@@ -78,7 +78,7 @@ class Request(threading.Thread):
                     request = self.retry_callback(self, self.func_args, self.func_kwargs)
                     if not isinstance(request, Request):
                         raise TypeError(
-                            f'Retry Error ... retry_pipeline must return request object, get {type(request).__name__}'
+                            f'Retry Error ... retry_pipeline must return request object, get {request}'
                         )
                     self.__dict__.update(request.__dict__)
 
@@ -152,7 +152,7 @@ class Downloader(object):
         self.wait_time = wait_time
 
     def push(self, request):
-        assert isinstance(request, Request), f'task must be {type(Request).__name__}'
+        assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
         self.thread_pool.push(request, request.priority)
 
     def push_item(self, item):
