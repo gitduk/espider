@@ -75,7 +75,8 @@ class Request(threading.Thread):
                 time.sleep(self.retry_count * 0.1)
 
                 if self.retry_callback:
-                    request = self.retry_callback(self, self.func_args, self.func_kwargs)
+                    self.func_kwargs['status_code'] = response.status_code
+                    request = self.retry_callback(self, *self.func_args, **self.func_kwargs)
                     if not isinstance(request, Request):
                         raise TypeError(
                             f'Retry Error ... retry_pipeline must return request object, get {request}'

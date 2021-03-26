@@ -54,7 +54,7 @@ class Spider(object):
                 self.request_kwargs[key] = value
 
         self.use_session = use_session
-        self.session = Session() if self.use_session else None
+        self.session = Session()
 
         # 加载 setting
         self.setting = Setting()
@@ -101,8 +101,8 @@ class Spider(object):
 
     @property
     def body(self):
-        body = self.spider.get('body', {})
-        return dict_to_body(body)
+        body = self.spider.get('body')
+        return dict_to_body(body) if body else None
 
     @property
     def body_dict(self):
@@ -114,7 +114,8 @@ class Spider(object):
 
     @property
     def json(self):
-        return dict_to_json(self.spider.get('json', {}))
+        js_data = self.spider.get('json')
+        return dict_to_json(js_data) if js_data else None
 
     @property
     def json_dict(self):
@@ -162,14 +163,16 @@ class Spider(object):
 
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
                 error_callback=None, failed_callback=None, retry_callback=None, args=None, priority=None,
-                use_session=False, **kwargs):
+                use_session=None, **kwargs):
+
+        if use_session is None: use_session = self.use_session
 
         request_kwargs = {
             **self.request_kwargs,
             'url': url or self.url,
             'method': method or 'GET',
-            'data': data or '',
-            'json': json or {},
+            'data': data,
+            'json': json,
             'headers': headers or self.headers,
             'cookies': cookies,
             'priority': priority,
@@ -211,8 +214,7 @@ class Spider(object):
         isinstance(response, Response)
         return self.request(**response.request_kwargs)
 
-    @staticmethod
-    def start_requests():
+    def start_requests(self):
         """
         起点
         """
@@ -233,7 +235,7 @@ class Spider(object):
         pass
 
     def retry_pipeline(self, request, *args, **kwargs):
-        print(f'Retry-{request.retry_count}: {request.request_kwargs}')
+        print(f'[{kwargs.get("status_code")}] Retry-{request.retry_count}: {request.request_kwargs}')
         return request
 
     def error_pipeline(self, exception, *args, **kwargs):
@@ -247,11 +249,6 @@ class Spider(object):
 
     def end(self):
         pass
-
-    @staticmethod
-    def save_html(response, path=None):
-        with open(path or './auto.html', 'w') as f:
-            f.write(response.text)
 
     def __repr__(self):
         msg = f'{self.__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'

@@ -281,13 +281,34 @@ class Response(res):
         return self.selector.get()
 
     def xpath(self, query, **kwargs):
-        return self.selector.xpath(query, **kwargs)
+        return self.selector.xpath(query, **kwargs).extract()
+
+    def xpath_first(self, query, **kwargs):
+        return self.selector.xpath(query, **kwargs).extract_first()
+
+    def xpath_map(self, map, **kwargs):
+        return self._query_from_map(self.xpath, map, **kwargs)
+
+    def xpath_first_map(self, map, **kwargs):
+        return self._query_from_map(self.xpath_first, map, **kwargs)
 
     def css(self, query):
-        return self.selector.css(query)
+        return self.selector.css(query).extract()
+
+    def css_first(self, query):
+        return self.selector.css(query).extract_first()
+
+    def css_map(self, map):
+        return self._query_from_map(self.css, map)
+
+    def css_first_map(self, map):
+        return self._query_from_map(self.css_first, map)
 
     def find(self, key, data=None, target_type=None):
         return search(key=key, data=data or self.json, target_type=target_type)
+
+    def find_map(self, map, data=None, target_type=None):
+        return self._query_from_map(self.find, map, data=data, target_type=target_type)
 
     def re(self, regex, replace_entities=False):
         """
@@ -307,6 +328,9 @@ class Response(res):
 
         return self.selector.re(regex, replace_entities)
 
+    def re_map(self, map, replace_entities=False):
+        return self._query_from_map(self.re, map, replace_entities=replace_entities)
+
     def re_first(self, regex, default=None, replace_entities=False):
         """
         @summary: 正则匹配
@@ -325,6 +349,20 @@ class Response(res):
             regex = re.sub("['\"]", "['\"]", regex)
 
         return self.selector.re_first(regex, default, replace_entities)
+
+    def re_first_map(self, map, default=None, replace_entities=False):
+        return self._query_from_map(self.re_first, map, default=default, replace_entities=replace_entities)
+
+    def _query_from_map(self, func, map: dict, *args, **kwargs):
+        data = {}
+        for key, value in map.items():
+            if isinstance(value, str):
+                data[key] = func(value, *args, **kwargs)
+            elif isinstance(value, dict):
+                data[key] = self._query_from_map(func, value, *args, **kwargs)
+            else:
+                print(f'Warning ... query not support {type(value)}')
+        return data
 
     def __del__(self):
         self.close()
