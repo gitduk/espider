@@ -1,5 +1,5 @@
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 import requests
 import threading
 from queue import Queue
@@ -108,7 +108,7 @@ class Request(threading.Thread):
                 # 数据入口
                 if callback:
                     assert isinstance(self.downloader, Downloader)
-
+                    e_msg = 'Invalid yield value: {}, yield value must be Request or dict object'
                     generator = callback(response_pro, *self.func_args, **self.func_kwargs)
                     if isinstance(generator, Generator):
                         for _ in generator:
@@ -121,9 +121,9 @@ class Request(threading.Thread):
                                 if isinstance(data, dict):
                                     self.downloader.push_item(_)
                                 else:
-                                    raise TypeError(f'Invalid yield value: {_}')
+                                    raise TypeError(e_msg.format(_))
                             else:
-                                raise TypeError(f'Invalid yield value: {_}')
+                                raise TypeError(e_msg.format(_))
 
     def __repr__(self):
         callback_name = self.callback.__name__ if self.callback else None
@@ -141,7 +141,7 @@ class Request(threading.Thread):
 class Downloader(object):
     __settings__ = ['wait_time', 'max_thread', 'extensions']
 
-    def __init__(self, max_thread=None, wait_time=0, item_callback=None, end_callback=None):
+    def __init__(self, max_thread=None, wait_time=0, item_callback=None, end_callback=None, item_filter=None):
         self.thread_pool = PriorityQueue()
         self.item_pool = Queue()
         self.item_callback = item_callback
@@ -151,6 +151,8 @@ class Downloader(object):
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0, 'Error': 0}
         self.extensions = []
         self.wait_time = wait_time
+        self.item_filter = item_filter
+        assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
 
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
@@ -210,10 +212,12 @@ class Downloader(object):
             if isinstance(_, Request):
                 self._start_request(_)
             elif isinstance(_, dict):
+                if self.item_filter: _ = {k: v for k, v in _.items() if k in self.item_filter}
                 self.item_callback(_, *(), **{})
             elif isinstance(_, tuple):
                 data, args, kwargs = self._process_callback_args(_)
                 if isinstance(data, dict):
+                    if self.item_filter: _ = {k: v for k, v in data.items() if k in self.item_filter}
                     self.item_callback(data, *args, **kwargs)
                 else:
                     raise TypeError(f'Invalid yield value: {_}')

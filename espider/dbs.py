@@ -1,7 +1,9 @@
 import os
+import pymysql
 from threading import RLock
 
 lock = RLock()
+
 
 class OpenCsv(object):
     def __init__(self, path, mode=None, delimiter=None):
@@ -46,3 +48,40 @@ class OpenCsv(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.file.close()
+
+
+class Mysql(object):
+
+    def __init__(self, host=None, user=None, password=None, database=None, port=None, charset='utf8mb4',
+                 cursorclass=None, **kwargs):
+        self.host = host or 'localhost'
+        self.user = user or 'root'
+        self.port = port or 3306
+        self.cursorclass = cursorclass or pymysql.cursors.DictCursor
+        self.password = password,
+        self.database = database,
+        self.port = port,
+        self.charset = charset,
+        self.kwargs = kwargs
+        self.db = None
+        self.cursor = None
+
+    def connect(self):
+        try:
+            db = pymysql.connect(
+                host=self.host,
+                user=self.user,
+                password=self.password,
+                database=self.database,
+                port=self.port,
+                charset=self.charset,
+                cursorclass=self.cursorclass,
+                **self.kwargs
+            )
+            cursor = db.cursor()
+        except Exception as e:
+            print(e)
+            return None, None
+        else:
+            self.db, self.cursor = db, cursor
+            return self.db, self.cursor

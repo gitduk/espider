@@ -64,11 +64,19 @@ class Spider(object):
         self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
         self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
 
+        # 过滤器
+        self.item_filter = []
+
         self.downloader = Downloader(
             **self.downloader_setting,
             item_callback=self.item_pipeline,
             end_callback=self.end,
+            item_filter=self.item_filter
         )
+
+        # 连接数据库
+        self.db = None
+        self.cursor = None
 
     def _init_header(self):
         if self.method == 'POST':
