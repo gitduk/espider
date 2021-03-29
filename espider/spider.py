@@ -222,6 +222,9 @@ class Spider(object):
         isinstance(response, Response)
         return self.request(**response.request_kwargs)
 
+    def before(self):
+        pass
+
     def start_requests(self):
         """
         起点
@@ -229,6 +232,8 @@ class Spider(object):
         yield ...
 
     def run(self):
+        self.before()
+
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 

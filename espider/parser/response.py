@@ -367,13 +367,11 @@ class Response(res):
     def __del__(self):
         self.close()
 
-    def open(self, delete_temp_file=False):
-        with open("temp.html", "w", encoding=self.encoding, errors="replace") as html:
+    def save_html(self, path=None):
+        with open(path or "index.html", "w", encoding=self.encoding, errors="replace") as html:
             self.encoding_errors = "replace"
             html.write(self.text)
 
-        os.system("open temp.html")
-
-        if delete_temp_file:
-            time.sleep(1)
-            os.remove("temp.html")
+    def save_content(self, path):
+        with open(path, "wb") as html:
+            html.write(self.content)
