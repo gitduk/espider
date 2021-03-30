@@ -209,20 +209,23 @@ class Downloader(object):
     # 数据出口, 分发任务，数据，响应
     def start(self):
         for _ in self.distribute_task():
-            if isinstance(_, Request):
-                self._start_request(_)
-            elif isinstance(_, dict):
-                if self.item_filter: _ = {k: v for k, v in _.items() if k in self.item_filter}
-                self.item_callback(_, *(), **{})
-            elif isinstance(_, tuple):
-                data, args, kwargs = self._process_callback_args(_)
-                if isinstance(data, dict):
-                    if self.item_filter: _ = {k: v for k, v in data.items() if k in self.item_filter}
-                    self.item_callback(data, *args, **kwargs)
+            try:
+                if isinstance(_, Request):
+                    self._start_request(_)
+                elif isinstance(_, dict):
+                    if self.item_filter: _ = {k: v for k, v in _.items() if k in self.item_filter}
+                    self.item_callback(_, *(), **{})
+                elif isinstance(_, tuple):
+                    data, args, kwargs = self._process_callback_args(_)
+                    if isinstance(data, dict):
+                        if self.item_filter: _ = {k: v for k, v in data.items() if k in self.item_filter}
+                        self.item_callback(data, *args, **kwargs)
+                    else:
+                        raise TypeError(f'Invalid yield value: {_}')
                 else:
                     raise TypeError(f'Invalid yield value: {_}')
-            else:
-                raise TypeError(f'Invalid yield value: {_}')
+            except Exception as e:
+                print(e)
 
     @staticmethod
     def _process_callback_args(args):

@@ -1,3 +1,4 @@
+import time
 from collections.abc import Generator
 
 from espider.default_settings import *
@@ -9,7 +10,7 @@ from espider.parser.response import Response
 
 from espider.settings import Setting
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
-    dict_to_json, update
+    dict_to_json, update, search, delete, strip, replace, random_list
 
 
 class Spider(object):
@@ -77,6 +78,20 @@ class Spider(object):
         # 连接数据库
         self.db = None
         self.cursor = None
+
+        # 额外参数
+        self.pocket = {}
+
+        # 数据处理工具
+        self.search = search
+        self.update = update
+        self.replace = replace
+        self.delete = delete
+        self.strip = strip
+        self.random_list = random_list
+
+        # 时间计算
+        self.start_time = time.time()
 
     def _init_header(self):
         if self.method == 'POST':
@@ -261,7 +276,8 @@ class Spider(object):
         pass
 
     def end(self):
-        pass
+        fmt_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() - self.start_time))
+        print(f'耗时: {fmt_time}')
 
     def __repr__(self):
         msg = f'{self.__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'

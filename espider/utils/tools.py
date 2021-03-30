@@ -1,5 +1,6 @@
 import hashlib
 import heapq
+import random
 import time
 from functools import wraps
 import json as Json
@@ -354,6 +355,12 @@ def args_split(args: tuple):
         kwarg = _kwargs
 
     return arg, kwarg or {}
+
+
+def random_list(stop, start=0, step=1):
+    numbers = list(range(start, stop, step))
+    random.shuffle(numbers)
+    return numbers
 
 
 class DictFactory(object):

@@ -250,11 +250,17 @@ class Response(res):
     def extract(self):
         return self.selector.get()
 
-    def xpath(self, query, **kwargs):
-        return self.selector.xpath(query, **kwargs).extract()
+    def xpath(self, query, extract=True, **kwargs):
+        if extract:
+            return self.selector.xpath(query, **kwargs).extract()
+        else:
+            return self.selector.xpath(query, **kwargs)
 
-    def xpath_first(self, query, **kwargs):
-        return self.selector.xpath(query, **kwargs).extract_first()
+    def xpath_first(self, query, extract=True, **kwargs):
+        if extract:
+            return self.selector.xpath(query, **kwargs).extract_first()
+        else:
+            return self.selector.xpath(query, **kwargs)
 
     def xpath_map(self, map, **kwargs):
         return self._query_from_map(self.xpath, map, **kwargs)
@@ -262,23 +268,29 @@ class Response(res):
     def xpath_first_map(self, map, **kwargs):
         return self._query_from_map(self.xpath_first, map, **kwargs)
 
-    def css(self, query):
-        return self.selector.css(query).extract()
+    def css(self, query, extract=True):
+        if extract:
+            return self.selector.css(query).extract()
+        else:
+            return self.selector.css(query)
 
-    def css_first(self, query):
-        return self.selector.css(query).extract_first()
+    def css_first(self, query, extract=True):
+        if extract:
+            return self.selector.css(query).extract_first()
+        else:
+            return self.selector.css(query)
 
-    def css_map(self, map):
-        return self._query_from_map(self.css, map)
+    def css_map(self, map, **kwargs):
+        return self._query_from_map(self.css, map, **kwargs)
 
-    def css_first_map(self, map):
-        return self._query_from_map(self.css_first, map)
+    def css_first_map(self, map, **kwargs):
+        return self._query_from_map(self.css_first, map, **kwargs)
 
     def find(self, key, data=None, target_type=None):
         return search(key=key, data=data or self.json, target_type=target_type)
 
-    def find_map(self, map, data=None, target_type=None):
-        return self._query_from_map(self.find, map, data=data, target_type=target_type)
+    def find_map(self, map, data=None, target_type=None, **kwargs):
+        return self._query_from_map(self.find, map, data=data, target_type=target_type, **kwargs)
 
     def re(self, regex, replace_entities=False):
         """
@@ -298,8 +310,8 @@ class Response(res):
 
         return self.selector.re(regex, replace_entities)
 
-    def re_map(self, map, replace_entities=False):
-        return self._query_from_map(self.re, map, replace_entities=replace_entities)
+    def re_map(self, map, replace_entities=False, **kwargs):
+        return self._query_from_map(self.re, map, replace_entities=replace_entities, **kwargs)
 
     def re_first(self, regex, default=None, replace_entities=False):
         """
@@ -320,22 +332,37 @@ class Response(res):
 
         return self.selector.re_first(regex, default, replace_entities)
 
-    def re_first_map(self, map, default=None, replace_entities=False):
-        return self._query_from_map(self.re_first, map, default=default, replace_entities=replace_entities)
+    def re_first_map(self, map, default=None, replace_entities=False, **kwargs):
+        return self._query_from_map(self.re_first, map, default=default, replace_entities=replace_entities, **kwargs)
 
     def _query_from_map(self, func, map: dict, *args, **kwargs):
         data = {}
         for key, value in map.items():
             if isinstance(value, str):
-                data[key] = func(value, *args, **kwargs)
+                data[key] = self.__get_query_value(func, value, *args, **kwargs)
             elif isinstance(value, dict):
                 data[key] = self._query_from_map(func, value, *args, **kwargs)
             else:
                 print(f'Warning ... query not support {type(value)}')
         return data
 
-    def __del__(self):
-        self.close()
+    def __get_query_value(self, func, query, *args, **kwargs):
+        queries = query.split('||')
+        for qu in queries:
+            if '&&' in qu:
+                delimiter = kwargs.pop('delimiter')
+                value_list = []
+                for _ in qu.split('&&'):
+                    v = func(_.strip(), *args, **kwargs)
+                    if v: value_list.append(v)
+                value = delimiter.join(value_list) if delimiter else value_list
+            else:
+                value = func(qu, *args, **kwargs)
+
+            if value: return value
+
+        else:
+            return ''
 
     def save_html(self, path=None):
         with open(path or "index.html", "w", encoding=self.encoding, errors="replace") as html:
@@ -345,3 +372,6 @@ class Response(res):
     def save_content(self, path):
         with open(path, "wb") as html:
             html.write(self.content)
+
+    def __del__(self):
+        self.close()
