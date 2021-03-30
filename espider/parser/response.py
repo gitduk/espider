@@ -208,40 +208,10 @@ class Response(res):
         return text
 
     @property
-    def __text(self):
-        """Content of the response, in unicode.
-
-        If Response.encoding is None, encoding will be guessed using
-        ``chardet``.
-
-        The encoding of the response content is determined based solely on HTTP
-        headers, following RFC 2616 to the letter. If you can take advantage of
-        non-HTTP knowledge to make a better guess at the encoding, you should
-        set ``r.encoding`` appropriately before accessing this property.
-        """
-
-        if not self.content:
-            return ""
-
-        # Decode unicode from given encoding.
-        try:
-            content = str(self.content, self.encoding, errors=self.encoding_errors)
-        except (LookupError, TypeError):
-            # A LookupError is raised if the encoding was not found which could
-            # indicate a misspelling or similar mistake.
-            #
-            # A TypeError can be raised if encoding is None
-            #
-            # So we try blindly encoding.
-            content = str(self.content, errors=self.encoding_errors)
-
-        return content
-
-    @property
     def text(self):
         if self._cached_text is None:
             if self.encoding and self.encoding.upper() != FAIL_ENCODING:
-                self._cached_text = self.__text
+                self._cached_text = super(Response, self).text
             else:
                 self._cached_text = self._get_unicode_html(self.content)
 
