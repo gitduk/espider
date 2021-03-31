@@ -23,7 +23,7 @@ class Setting(object):
 
     def update(self, key, **kwargs):
         if key in self.__dict__.keys() and isinstance(self.__dict__.get(key), dict):
-            self.__dict__[key].update(kwargs)
+            self.__dict__[key].update_spider(kwargs)
         else:
             self.__dict__[key] = kwargs
 

@@ -1,6 +1,8 @@
 import time
 from collections.abc import Generator
 
+import requests
+
 from espider.default_settings import *
 from espider.network import Request, Downloader
 import random
@@ -10,7 +12,7 @@ from espider.parser.response import Response
 
 from espider.settings import Setting
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
-    dict_to_json, update, search, delete, strip, replace, random_list
+    dict_to_json, update, search, delete, strip, replace, random_list, human_time
 
 
 class Spider(object):
@@ -89,6 +91,10 @@ class Spider(object):
         self.delete = delete
         self.strip = strip
         self.random_list = random_list
+
+        # 网络
+        self.get = requests.get
+        self.post = requests.post
 
         # 时间计算
         self.start_time = time.time()
@@ -171,7 +177,7 @@ class Spider(object):
     def cookie_jar(self):
         return self.spider.get('cookies')
 
-    def update(self, **kwargs):
+    def update_spider(self, **kwargs):
         self.spider = update({key: value for key, value in kwargs.items()}, data=self.spider)
 
     def update_cookie_from_header(self):
@@ -276,8 +282,8 @@ class Spider(object):
         pass
 
     def end(self):
-        fmt_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time() - self.start_time))
-        print(f'耗时: {fmt_time}')
+        cost_time = human_time(time.time() - self.start_time)
+        print('Time: {} day {} hour {} minute {:.3f} second'.format(*cost_time))
 
     def __repr__(self):
         msg = f'{self.__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'

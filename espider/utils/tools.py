@@ -363,6 +363,14 @@ def random_list(stop, start=0, step=1):
     return numbers
 
 
+def human_time(time_stamp):
+    days = time_stamp // 86400
+    hours = (time_stamp % 86400) // 3600
+    minutes = (time_stamp % 3600) // 60
+    seconds = (time_stamp % 60)
+    return days, hours, minutes, seconds
+
+
 class DictFactory(object):
     def __init__(self, data):
         assert isinstance(data, dict), 'item must be a dict'

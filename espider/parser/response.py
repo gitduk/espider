@@ -9,9 +9,7 @@ Created on 2018-07-26 11:40:28
 """
 
 import datetime
-import os
-import re
-import time
+import re as _re
 from urllib.parse import urlparse, urlunparse, urljoin
 
 from espider.utils.tools import search
@@ -30,7 +28,7 @@ SPECIAL_CHARACTERS = [
 ]
 
 SPECIAL_CHARACTER_PATTERNS = [
-    re.compile(special_character) for special_character in SPECIAL_CHARACTERS
+    _re.compile(special_character) for special_character in SPECIAL_CHARACTERS
 ]
 
 
@@ -194,7 +192,7 @@ class Response(res):
                 # return re.sub(regex, r'\1{}\3'.format(absolute_link), html) # 使用正则替换，个别字符不支持。如该网址源代码http://permit.mep.gov.cn/permitExt/syssb/xxgk/xxgk!showImage.action?dataid=0b092f8115ff45c5a50947cdea537726
                 return text.group(1) + absolute_link + text.group(3)
 
-            text = re.sub(regex, replace_href, text, flags=re.S)
+            text = _re.sub(regex, replace_href, text, flags=_re.S)
 
         return text
 
@@ -292,13 +290,14 @@ class Response(res):
     def find_map(self, map, data=None, target_type=None, **kwargs):
         return self._query_from_map(self.find, map, data=data, target_type=target_type, **kwargs)
 
-    def re(self, regex, replace_entities=False):
+    def re(self, regex, replace_entities=False, flags=_re.S):
         """
         @summary: 正则匹配
         注意：网页源码<a class='page-numbers'...  会被处理成<a class="page-numbers" ； 写正则时要写<a class="(.*?)"。 但不会改非html的文本引号格式
         为了使用方便，正则单双引号自动处理为不敏感
         ---------
         @param regex: 正则或者re.compile
+        @param flags: re.S ...
         @param replace_entities: 为True时 去掉&nbsp;等字符， 转义&quot;为 " 等， 会使网页结构发生变化。如在网页源码中提取json， 建议设置成False
         ---------
         @result: 列表
@@ -306,14 +305,14 @@ class Response(res):
 
         # 将单双引号设置为不敏感
         if isinstance(regex, str):
-            regex = re.sub("['\"]", "['\"]", regex)
+            regex = _re.sub("['\"]", "['\"]", regex)
 
-        return self.selector.re(regex, replace_entities)
+        return self.selector.re(regex, replace_entities, flags=flags)
 
     def re_map(self, map, replace_entities=False, **kwargs):
         return self._query_from_map(self.re, map, replace_entities=replace_entities, **kwargs)
 
-    def re_first(self, regex, default=None, replace_entities=False):
+    def re_first(self, regex, default=None, replace_entities=False, flags=_re.S):
         """
         @summary: 正则匹配
         注意：网页源码<a class='page-numbers'...  会被处理成<a class="page-numbers" ； 写正则时要写<a class="(.*?)"。 但不会改非html的文本引号格式
@@ -321,6 +320,7 @@ class Response(res):
         ---------
         @param regex: 正则或者re.compile
         @param default: 未匹配到， 默认值
+        @param flags: re.S ...
         @param replace_entities: 为True时 去掉&nbsp;等字符， 转义&quot;为 " 等， 会使网页结构发生变化。如在网页源码中提取json， 建议设置成False
         ---------
         @result: 第一个值或默认值
@@ -328,9 +328,9 @@ class Response(res):
 
         # 将单双引号设置为不敏感
         if isinstance(regex, str):
-            regex = re.sub("['\"]", "['\"]", regex)
+            regex = _re.sub("['\"]", "['\"]", regex)
 
-        return self.selector.re_first(regex, default, replace_entities)
+        return self.selector.re_first(regex, default, replace_entities, flags=flags)
 
     def re_first_map(self, map, default=None, replace_entities=False, **kwargs):
         return self._query_from_map(self.re_first, map, default=default, replace_entities=replace_entities, **kwargs)
