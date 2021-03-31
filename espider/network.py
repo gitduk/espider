@@ -152,6 +152,7 @@ class Downloader(object):
         self.extensions = []
         self.wait_time = wait_time
         self.item_filter = item_filter
+        self.close_countdown = 10
         assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
 
     def push(self, request):
@@ -185,15 +186,29 @@ class Downloader(object):
         return finish
 
     def distribute_task(self):
-        while not self._finish():
-            if self.max_thread and threading.active_count() > self.max_thread:
+        countdown = self.close_countdown
+        close = False
+        while not close:
+            if self.max_thread and self.running_thread.qsize() > self.max_thread:
                 self._join_thread()
             else:
                 request = self.thread_pool.pop()
                 if request:
+                    countdown = self.close_countdown
                     yield request
-                else:
+                elif not self._finish():
                     self._join_thread()
+                else:
+                    if countdown >= 0:
+                        if countdown < self.close_countdown:
+                            print('Wait task ...'.format(countdown + 1))
+                        time.sleep(1)
+                        countdown -= 1
+                    else:
+                        if self.end_callback: self.end_callback()
+                        msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
+                        print(msg)
+                        close = True
 
             try:
                 item = self.item_pool.get_nowait()
@@ -201,10 +216,6 @@ class Downloader(object):
                 pass
             else:
                 yield item
-
-        if self.end_callback: self.end_callback()
-        msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
-        print(msg)
 
     # 数据出口, 分发任务，数据，响应
     def start(self):
