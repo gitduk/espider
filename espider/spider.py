@@ -1,3 +1,4 @@
+import threading
 import time
 from collections.abc import Generator
 
@@ -196,6 +197,10 @@ class Spider(object):
 
         if use_session is None: use_session = self.use_session
 
+        if isinstance(headers, str): headers = headers_to_dict(headers)
+        if isinstance(cookies, str): cookies = cookies_to_dict(cookies)
+        if isinstance(json, str): json = json_to_dict(json)
+
         request_kwargs = {
             **self.request_kwargs,
             'url': url or self.url,
@@ -258,12 +263,16 @@ class Spider(object):
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 
-        request_generator = self.start_requests()
-        assert isinstance(request_generator, Generator), 'function start_requests must be a generator'
+        assert isinstance(self.start_requests(), Generator), 'function start_requests must be a generator'
+
+        spider_thread = threading.Thread(target=self._run)
+        spider_thread.start()
+        self.downloader.start()
+        spider_thread.join()
+
+    def _run(self):
         for request in self.start_requests():
             self.downloader.push(request)
-
-        self.downloader.start()
 
     def parse(self, response, *args, **kwargs):
         pass
