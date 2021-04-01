@@ -4,6 +4,12 @@ from w3lib.url import canonicalize_url
 from espider.utils.tools import get_md5
 
 
+class BaseExtension(object):
+
+    def process(self, target):
+        pass
+
+
 class RequestFilter(redis.client.Redis):
     __REDIS_KEYS__ = [
         'db', 'password', 'socket_timeout',
@@ -27,7 +33,7 @@ class RequestFilter(redis.client.Redis):
         self.set_key = set_key or 'urls'
         self.timeout = timeout
 
-    def __call__(self, request, *args, **kwargs):
+    def process(self, request, *args, **kwargs):
         skey = self.set_key
 
         if self.timeout:

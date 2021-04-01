@@ -1,17 +1,13 @@
 import threading
 import time
 from collections.abc import Generator
-
-import requests
-
 from espider.default_settings import *
 from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
-from requests.sessions import Session
 from espider.parser.response import Response
-
 from espider.settings import Setting
+from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
     dict_to_json, update, search, delete, strip, replace, random_list, human_time
 
@@ -58,7 +54,8 @@ class Spider(object):
                 self.request_kwargs[key] = value
 
         self.use_session = use_session
-        self.session = Session()
+        self.session = requests.Session()
+        self.session.headers = self.spider.get('headers')
 
         # 加载 setting
         self.setting = Setting()
@@ -71,11 +68,15 @@ class Spider(object):
         # 过滤器
         self.item_filter = []
 
+        # 插件
+        self.response_extensions = []
+        self.request_extensions = []
+
         self.downloader = Downloader(
             **self.downloader_setting,
             item_callback=self.item_pipeline,
             end_callback=self.end,
-            item_filter=self.item_filter
+            item_filter=self.item_filter,
         )
 
         # 连接数据库
@@ -293,6 +294,27 @@ class Spider(object):
     def end(self):
         cost_time = human_time(time.time() - self.start_time)
         print('Time: {} day {} hour {} minute {:.3f} second'.format(*cost_time))
+
+    def _add_extension(self, extension, target=None, *args, **kwargs):
+        if type(extension).__name__ == 'type':
+            extension = extension()
+
+        new_extension = {
+            'extension': extension,
+            'args': args,
+            'kwargs': kwargs,
+            'count': 0
+        }
+        if target == 'request':
+            self.request_extensions.append(new_extension)
+        elif target == 'response':
+            self.response_extensions.append(new_extension)
+
+    def add_request_extension(self, extension, *args, **kwargs):
+        self._add_extension(extension, target='request', *args, **kwargs)
+
+    def add_response_extension(self, extension, *args, **kwargs):
+        self._add_extension(extension, target='response', *args, **kwargs)
 
     def __repr__(self):
         msg = f'{self.__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'

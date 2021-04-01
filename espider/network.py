@@ -1,6 +1,5 @@
 import time
 from collections.abc import Generator, Iterable
-import requests
 import threading
 from queue import Queue
 import urllib3
@@ -8,6 +7,7 @@ from copy import deepcopy
 from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue
+import espider.utils.requests as requests
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -50,16 +50,65 @@ class Request(threading.Thread):
         self.success = False
         self.error = False
 
+        # 插件
+        self.response_extensions = []
+        self.request_extensions = []
+
+        # 额外参数
+        self.pocket = {}
+
         if args and not isinstance(args, tuple): args = (args,)
         self.func_args, self.func_kwargs = args_split(deepcopy(args) or ())
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
+    def _load_extensions(self, response=None):
+        if not response and self.request_extensions:
+            target, extensions = self, self.request_extensions
+        elif response and self.response_extensions:
+            target, extensions = response, self.response_extensions
+        else:
+            target, extensions = None, []
+
+        if target:
+            for _ in extensions:
+                extension, args, kwargs = _.get('extension'), _.get('args'), _.get('kwargs')
+                assert hasattr(extension, 'process'), 'extension must have process method'
+
+                if args and kwargs:
+                    result = extension.process(target, *args, **kwargs)
+                elif args:
+                    result = extension.process(target, *args)
+                elif kwargs:
+                    result = extension.process(target, **kwargs)
+                else:
+                    result = extension.process(target)
+
+                if result:
+                    if isinstance(result, Request):
+                        self.__dict__.update(result.__dict__)
+                    elif isinstance(result, Response):
+                        target = result
+                    else:
+                        raise TypeError('Extensions must return a Request object or None')
+                else:
+                    continue
+
+                if 'count' not in _.keys(): _['count'] = 0
+                _['count'] += 1
+
+            if isinstance(target, Response): return target
+        else:
+            return response
+
     def run(self):
         self.is_start = True
+
+        # 加载请求插件
+        self._load_extensions()
+
         start = time.time()
         try:
             if self.session:
-                assert isinstance(self.session, requests.sessions.Session)
                 self.request_kwargs.pop('cookies', None)
                 response = self.session.request(**self.request_kwargs)
             else:
@@ -80,59 +129,71 @@ class Request(threading.Thread):
                 time.sleep(self.retry_count * 0.1)
 
                 if self.retry_callback:
-                    request = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
-                    if not isinstance(request, Request):
-                        raise TypeError(
-                            f'Retry Error ... retry_pipeline must return request object, get {request}'
-                        )
-                    self.__dict__.update(request.__dict__)
 
-                self.run()
+                    request, *result = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
+                    if request:
+                        error_msg = 'Retry Error ... retry_pipeline must return request or response object'
+                        if not isinstance(request, Request): raise TypeError(error_msg)
+                        self.__dict__.update(request.__dict__)
+
+                        if result:
+                            resp = result[0]
+                            if isinstance(resp, requests.Response): resp = Response(resp)
+                            if not isinstance(resp, Response): raise TypeError(error_msg)
+                            self._process_callback(resp, start)
+                        else:
+                            self.run()
+
             else:
-                if response.status_code == 200: self.success = True
+                self._process_callback(response, start)
 
-                response_pro = Response(response)
-                response_pro.cost_time = '{:.3f}'.format(time.time() - start)
-                response_pro.retry_times = self.retry_count
-                response_pro.request_kwargs = self.request_kwargs
+    def _process_callback(self, response, start):
+        if response.status_code == 200: self.success = True
 
-                if self.success:
-                    if self.callback:
-                        callback = self.callback
+        response.cost_time = '{:.3f}'.format(time.time() - start)
+        response.retry_times = self.retry_count
+        response.request_kwargs = self.request_kwargs
+
+        # 加载响应插件
+        response = self._load_extensions(response=response)
+
+        if self.success:
+            if self.callback:
+                callback = self.callback
+            else:
+                callback = None
+        else:
+            if self.failed_callback:
+                callback = self.failed_callback
+            elif self.callback:
+                callback = self.callback
+            else:
+                callback = None
+
+        # 数据入口
+        if callback:
+            assert isinstance(self.downloader, Downloader)
+            e_msg = 'Invalid yield value: {}, yield value must be Request or dict object'
+
+            if not self.success and self.failed_callback:
+                generator = callback(self, response, *self.func_args, **self.func_kwargs)
+            else:
+                generator = callback(response, *self.func_args, **self.func_kwargs)
+
+            if isinstance(generator, Generator):
+                for _ in generator:
+                    if isinstance(_, Request):
+                        self.downloader.push(_)
+                    elif isinstance(_, dict):
+                        self.downloader.push_item(_)
+                    elif isinstance(_, tuple):
+                        data, args, kwargs = self.downloader._process_callback_args(_)
+                        if isinstance(data, dict):
+                            self.downloader.push_item(_)
+                        else:
+                            raise TypeError(e_msg.format(_))
                     else:
-                        callback = None
-                else:
-                    if self.failed_callback:
-                        callback = self.failed_callback
-                    elif self.callback:
-                        callback = self.callback
-                    else:
-                        callback = None
-
-                # 数据入口
-                if callback:
-                    assert isinstance(self.downloader, Downloader)
-                    e_msg = 'Invalid yield value: {}, yield value must be Request or dict object'
-
-                    if not self.success and self.failed_callback:
-                        generator = callback(self, response_pro, *self.func_args, **self.func_kwargs)
-                    else:
-                        generator = callback(response_pro, *self.func_args, **self.func_kwargs)
-
-                    if isinstance(generator, Generator):
-                        for _ in generator:
-                            if isinstance(_, Request):
-                                self.downloader.push(_)
-                            elif isinstance(_, dict):
-                                self.downloader.push_item(_)
-                            elif isinstance(_, tuple):
-                                data, args, kwargs = self.downloader._process_callback_args(_)
-                                if isinstance(data, dict):
-                                    self.downloader.push_item(_)
-                                else:
-                                    raise TypeError(e_msg.format(_))
-                            else:
-                                raise TypeError(e_msg.format(_))
+                        raise TypeError(e_msg.format(_))
 
     def __repr__(self):
         callback_name = self.callback.__name__ if self.callback else None
@@ -171,19 +232,6 @@ class Downloader(object):
 
     def push_item(self, item):
         self.item_pool.put(item)
-
-    def add_extension(self, extension, *args, **kwargs):
-        if type(extension).__name__ == 'type':
-            extension = extension()
-
-        self.extensions.append(
-            {
-                'extension': extension,
-                'args': args,
-                'kwargs': kwargs,
-                'count': 0
-            }
-        )
 
     def _finish(self):
         finish = False
@@ -262,26 +310,6 @@ class Downloader(object):
             raise TypeError(f'Invalid yield value: {args}')
 
     def _start_request(self, request):
-        assert isinstance(request, Request)
-
-        if self.extensions:
-            for _ in self.extensions:
-                extension, args, kwargs = _.get('extension'), _.get('args'), _.get('kwargs')
-                if request:
-                    if args and kwargs:
-                        request = extension(request, *args, **kwargs)
-                    elif args:
-                        request = extension(request, *args)
-                    elif kwargs:
-                        request = extension(request, **kwargs)
-                    else:
-                        request = extension(request)
-
-                    _['count'] += 1
-
-            assert isinstance(
-                request, Request
-            ) or not request, 'Extensions must return RequestThread or None'
 
         if request:
             time.sleep(self.wait_time + request.retry_count * 0.1)
