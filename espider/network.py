@@ -41,9 +41,9 @@ class Request(threading.Thread):
         self.priority = kwargs.get('priority') or 0
         self.max_retry = kwargs.get('max_retry') or 0
         self.callback = kwargs.get('callback')
-        self.failed_callback = kwargs.get('failed_callback')
-        self.error_callback = kwargs.get('error_callback')
-        self.retry_callback = kwargs.get('retry_callback')
+        self.failed_callback = self.downloader.pipeline.failed_pipeline
+        self.error_callback = self.downloader.pipeline.error_pipeline
+        self.retry_callback = self.downloader.pipeline.retry_pipeline
         self.session = kwargs.get('session')
         self.retry_count = 0
         self.is_start = False
@@ -211,10 +211,10 @@ class Request(threading.Thread):
 class Downloader(object):
     __settings__ = ['wait_time', 'max_thread', 'extensions']
 
-    def __init__(self, max_thread=None, wait_time=0, item_callback=None, end_callback=None, item_filter=None):
+    def __init__(self, max_thread=None, wait_time=0, pipeline=None, end_callback=None, item_filter=None):
         self.thread_pool = PriorityQueue()
         self.item_pool = Queue()
-        self.item_callback = item_callback
+        self.pipeline = pipeline
         self.end_callback = end_callback
         self.max_thread = max_thread or 10
         self.running_thread = Queue()
@@ -286,12 +286,12 @@ class Downloader(object):
                     self._start_request(_)
                 elif isinstance(_, dict):
                     if self.item_filter: _ = {k: v for k, v in _.items() if k in self.item_filter}
-                    self.item_callback(_, *(), **{})
+                    self.pipeline.item_pipeline(_, *(), **{})
                 elif isinstance(_, tuple):
                     data, args, kwargs = self._process_callback_args(_)
                     if isinstance(data, dict):
-                        if self.item_filter: _ = {k: v for k, v in data.items() if k in self.item_filter}
-                        self.item_callback(data, *args, **kwargs)
+                        if self.item_filter: data = {k: v for k, v in data.items() if k in self.item_filter}
+                        self.pipeline.item_pipeline(data, *args, **kwargs)
                     else:
                         raise TypeError(f'Invalid yield value: {_}')
                 else:
@@ -329,7 +329,7 @@ class Downloader(object):
                 self.count['Failed'] += 1
 
     def __repr__(self):
-        item_callback_name = self.item_callback.__name__ if self.item_callback else None
+        item_callback_name = self.pipeline.item_pipeline.__name__ if self.pipeline else None
         end_callback_name = self.end_callback.__name__ if self.end_callback else None
         msg = f'max thread: {self.max_thread}\n' \
               f'wait time: {self.wait_time}\n' \

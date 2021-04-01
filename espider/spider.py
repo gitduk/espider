@@ -6,6 +6,7 @@ from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
 from espider.parser.response import Response
+from espider.pipelines import BasePipeline
 from espider.settings import Setting
 from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
@@ -74,7 +75,7 @@ class Spider(object):
 
         self.downloader = Downloader(
             **self.downloader_setting,
-            item_callback=self.item_pipeline,
+            pipeline=BasePipeline(),
             end_callback=self.end,
             item_filter=self.item_filter,
         )
@@ -193,8 +194,7 @@ class Spider(object):
             self.spider['cookies'] = merge_cookies(self.spider.get('cookies'), response.cookies)
 
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
-                error_callback=None, failed_callback=None, retry_callback=None, args=None, priority=None,
-                use_session=None, **kwargs):
+                args=None, priority=None, use_session=None, **kwargs):
 
         if use_session is None: use_session = self.use_session
 
@@ -212,9 +212,6 @@ class Spider(object):
             'cookies': cookies,
             'priority': priority,
             'callback': callback or self.parse,
-            'retry_callback': retry_callback or self.retry_pipeline,
-            'failed_callback': failed_callback or self.failed_pipeline,
-            'error_callback': error_callback or self.error_pipeline,
             'downloader': self.downloader,
             'args': args,
             'session': self.session if use_session else None,
@@ -223,9 +220,8 @@ class Spider(object):
         }
         return Request(**request_kwargs)
 
-    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None,
-                     error_callback=None, failed_callback=None, retry_callback=None, args=None, priority=None,
-                     use_session=False, **kwargs):
+    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
+                     priority=None, use_session=False, **kwargs):
 
         return self.request(
             self,
@@ -236,9 +232,6 @@ class Spider(object):
             headers=headers,
             cookies=cookies,
             callback=callback,
-            retry_callback=retry_callback,
-            failed_callback=failed_callback,
-            error_callback=error_callback,
             args=args,
             priority=priority,
             use_session=use_session,
@@ -254,7 +247,7 @@ class Spider(object):
 
     def start_requests(self):
         """
-        起点
+        入口
         """
         yield ...
 
@@ -276,19 +269,6 @@ class Spider(object):
             self.downloader.push(request)
 
     def parse(self, response, *args, **kwargs):
-        pass
-
-    def retry_pipeline(self, request, response, *args, **kwargs):
-        print(f'[{response.status_code}] Retry-{request.retry_count}: {request.request_kwargs}')
-        return request
-
-    def error_pipeline(self, request, exception, *args, **kwargs):
-        raise exception
-
-    def failed_pipeline(self, request, response, *args, **kwargs):
-        print(f'Request Failed ... {response} Retry: {response.retry_times}\nargs: {args} kwargs: {kwargs}')
-
-    def item_pipeline(self, item, *args, **kwargs):
         pass
 
     def end(self):
