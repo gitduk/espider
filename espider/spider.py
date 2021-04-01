@@ -277,15 +277,15 @@ class Spider(object):
     def parse(self, response, *args, **kwargs):
         pass
 
-    def retry_pipeline(self, request, *args, **kwargs):
-        print(f'[{kwargs.get("status_code")}] Retry-{request.retry_count}: {request.request_kwargs}')
+    def retry_pipeline(self, request, response, *args, **kwargs):
+        print(f'[{response.status_code}] Retry-{request.retry_count}: {request.request_kwargs}')
         return request
 
-    def error_pipeline(self, exception, *args, **kwargs):
-        print(f'Request Error ... {exception}, args: {args}, kwargs: {kwargs}')
+    def error_pipeline(self, request, exception, *args, **kwargs):
+        raise exception
 
-    def failed_pipeline(self, response, *args, **kwargs):
-        print(f'Request Failed ... {response} Retry: {response.retry_times} args: {args} kwargs: {kwargs}')
+    def failed_pipeline(self, request, response, *args, **kwargs):
+        print(f'Request Failed ... {response} Retry: {response.retry_times}\nargs: {args} kwargs: {kwargs}')
 
     def item_pipeline(self, item, *args, **kwargs):
         pass

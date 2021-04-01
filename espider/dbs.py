@@ -47,7 +47,7 @@ class OpenCsv(object):
             return [dict(zip(self.head, line.strip('\n').split(self.delimiter))) for line in lines[1:]]
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.file.close()
+        self.file._close()
 
 
 class Mysql(object):

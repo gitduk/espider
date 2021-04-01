@@ -68,15 +68,19 @@ class Request(threading.Thread):
         except Exception as e:
             self.error = True
             if self.error_callback:
-                self.error_callback(e, *self.func_args, **{**self.func_kwargs, 'request_kwargs': self.request_kwargs})
+                self.error_callback(
+                    self, e,
+                    *self.func_args,
+                    **{**self.func_kwargs,
+                       'request_kwargs': self.request_kwargs}
+                )
         else:
             if response.status_code != 200 and self.retry_count < self.max_retry:
                 self.retry_count += 1
                 time.sleep(self.retry_count * 0.1)
 
                 if self.retry_callback:
-                    self.func_kwargs['status_code'] = response.status_code
-                    request = self.retry_callback(self, *self.func_args, **self.func_kwargs)
+                    request = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
                     if not isinstance(request, Request):
                         raise TypeError(
                             f'Retry Error ... retry_pipeline must return request object, get {request}'
@@ -109,7 +113,12 @@ class Request(threading.Thread):
                 if callback:
                     assert isinstance(self.downloader, Downloader)
                     e_msg = 'Invalid yield value: {}, yield value must be Request or dict object'
-                    generator = callback(response_pro, *self.func_args, **self.func_kwargs)
+
+                    if not self.success and self.failed_callback:
+                        generator = callback(self, response_pro, *self.func_args, **self.func_kwargs)
+                    else:
+                        generator = callback(response_pro, *self.func_args, **self.func_kwargs)
+
                     if isinstance(generator, Generator):
                         for _ in generator:
                             if isinstance(_, Request):
@@ -153,6 +162,7 @@ class Downloader(object):
         self.wait_time = wait_time
         self.item_filter = item_filter
         self.close_countdown = 10
+        self._close = False
         assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
 
     def push(self, request):
@@ -185,10 +195,13 @@ class Downloader(object):
 
         return finish
 
+    @property
+    def status(self):
+        return 'Closed' if self._close else 'Running'
+
     def distribute_task(self):
         countdown = self.close_countdown
-        close = False
-        while not close:
+        while not self._close:
             if self.max_thread and self.running_thread.qsize() > self.max_thread:
                 self._join_thread()
             else:
@@ -208,7 +221,7 @@ class Downloader(object):
                         if self.end_callback: self.end_callback()
                         msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
                         print(msg)
-                        close = True
+                        self._close = True
 
             try:
                 item = self.item_pool.get_nowait()
