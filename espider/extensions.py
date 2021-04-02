@@ -1,4 +1,3 @@
-import json
 import redis
 from w3lib.url import canonicalize_url
 from espider.utils.tools import get_md5
@@ -74,3 +73,26 @@ class RequestFilter(redis.client.Redis):
                 args.append(request.requests_kwargs.get(arg))
 
         return get_md5(*args)
+
+
+def _load_extensions(target, extensions):
+    for extension_dict in extensions:
+        extension, args, kwargs = extension_dict.get('extension'), extension_dict.get('args'), extension_dict.get(
+            'kwargs')
+        assert hasattr(extension, 'process'), 'extension must have process method'
+
+        if args and kwargs:
+            result = extension.process(target, *args, **kwargs)
+        elif args:
+            result = extension.process(target, *args)
+        elif kwargs:
+            result = extension.process(target, **kwargs)
+        else:
+            result = extension.process(target)
+
+        if result: target = result
+
+        if 'count' not in extension_dict.keys(): extension_dict['count'] = 0
+        extension_dict['count'] += 1
+
+    return target

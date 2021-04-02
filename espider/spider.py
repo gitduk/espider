@@ -69,10 +69,6 @@ class Spider(object):
         # 过滤器
         self.item_filter = []
 
-        # 插件
-        self.response_extensions = []
-        self.request_extensions = []
-
         self.downloader = Downloader(
             **self.downloader_setting,
             pipeline=BasePipeline(),
@@ -286,16 +282,12 @@ class Spider(object):
             'count': 0
         }
         if target == 'request':
-            self.request_extensions.append(new_extension)
+            self.downloader.request_extensions.append(new_extension)
         elif target == 'response':
-            self.response_extensions.append(new_extension)
+            self.downloader.response_extensions.append(new_extension)
 
     def add_request_extension(self, extension, *args, **kwargs):
         self._add_extension(extension, target='request', *args, **kwargs)
 
     def add_response_extension(self, extension, *args, **kwargs):
         self._add_extension(extension, target='response', *args, **kwargs)
-
-    def __repr__(self):
-        msg = f'{self.__name__}({self.method}, url=\'{self.url}\', body=\'{self.body or self.json}\', headers={self.headers}, cookies={self.cookies})'
-        return msg

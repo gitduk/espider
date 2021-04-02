@@ -5,6 +5,7 @@ from queue import Queue
 import urllib3
 from copy import deepcopy
 from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
+from espider.extensions import _load_extensions
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue
 import espider.utils.requests as requests
@@ -50,10 +51,6 @@ class Request(threading.Thread):
         self.success = False
         self.error = False
 
-        # 插件
-        self.response_extensions = []
-        self.request_extensions = []
-
         # 额外参数
         self.pocket = {}
 
@@ -61,50 +58,12 @@ class Request(threading.Thread):
         self.func_args, self.func_kwargs = args_split(deepcopy(args) or ())
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
-    def _load_extensions(self, response=None):
-        if not response and self.request_extensions:
-            target, extensions = self, self.request_extensions
-        elif response and self.response_extensions:
-            target, extensions = response, self.response_extensions
-        else:
-            target, extensions = None, []
-
-        if target:
-            for _ in extensions:
-                extension, args, kwargs = _.get('extension'), _.get('args'), _.get('kwargs')
-                assert hasattr(extension, 'process'), 'extension must have process method'
-
-                if args and kwargs:
-                    result = extension.process(target, *args, **kwargs)
-                elif args:
-                    result = extension.process(target, *args)
-                elif kwargs:
-                    result = extension.process(target, **kwargs)
-                else:
-                    result = extension.process(target)
-
-                if result:
-                    if isinstance(result, Request):
-                        self.__dict__.update(result.__dict__)
-                    elif isinstance(result, Response):
-                        target = result
-                    else:
-                        raise TypeError('Extensions must return a Request object or None')
-                else:
-                    continue
-
-                if 'count' not in _.keys(): _['count'] = 0
-                _['count'] += 1
-
-            if isinstance(target, Response): return target
-        else:
-            return response
-
     def run(self):
         self.is_start = True
 
         # 加载请求插件
-        self._load_extensions()
+        request = _load_extensions(target=self, extensions=self.downloader.request_extensions)
+        self.__dict__.update(request.__dict__)
 
         start = time.time()
         try:
@@ -155,7 +114,7 @@ class Request(threading.Thread):
         response.request_kwargs = self.request_kwargs
 
         # 加载响应插件
-        response = self._load_extensions(response=response)
+        response = _load_extensions(target=response, extensions=self.downloader.response_extensions)
 
         if self.success:
             if self.callback:
@@ -196,16 +155,7 @@ class Request(threading.Thread):
                         raise TypeError(e_msg.format(_))
 
     def __repr__(self):
-        callback_name = self.callback.__name__ if self.callback else None
-        failed_callback_name = self.failed_callback.__name__ if self.failed_callback else None
-        error_callback_name = self.error_callback.__name__ if self.error_callback else None
-        retry_callback_name = self.retry_callback.__name__ if self.retry_callback else None
-        return f'Thread: <{self.__class__.__name__}({self.name}, {self.priority})>\n' \
-               f'max retry: {self.max_retry}\n' \
-               f'callback: {callback_name}\n' \
-               f'failed callback: {failed_callback_name}\n' \
-               f'error callback: {error_callback_name}\n' \
-               f'retry callback: {retry_callback_name}'
+        return f'<{self.name} {self.__class__.__name__}> {self.method}:{self.url}, priority:{self.priority}'
 
 
 class Downloader(object):
@@ -219,12 +169,15 @@ class Downloader(object):
         self.max_thread = max_thread or 10
         self.running_thread = Queue()
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0, 'Error': 0}
-        self.extensions = []
         self.wait_time = wait_time
         self.item_filter = item_filter
         self.close_countdown = 10
         self._close = False
         assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
+
+        # 插件
+        self.request_extensions = []
+        self.response_extensions = []
 
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
@@ -329,11 +282,6 @@ class Downloader(object):
                 self.count['Failed'] += 1
 
     def __repr__(self):
-        item_callback_name = self.pipeline.item_pipeline.__name__ if self.pipeline else None
-        end_callback_name = self.end_callback.__name__ if self.end_callback else None
-        msg = f'max thread: {self.max_thread}\n' \
-              f'wait time: {self.wait_time}\n' \
-              f'item callback: {item_callback_name}\n' \
-              f'end callback: {end_callback_name}\n' \
-              f'extensions: {self.extensions}'
-        return msg
+        return '<Downloader> max_thread: {}, count: {}, wait_time: {}'.format(
+            self.max_thread, self.count, self.wait_time
+        )
