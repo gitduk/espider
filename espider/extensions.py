@@ -32,8 +32,13 @@ class RequestFilter(redis.client.Redis):
 
         self.set_key = set_key or 'urls'
         self.timeout = timeout
+        self.priority = None
 
     def process(self, request, *args, **kwargs):
+
+        # 过滤层级
+        if self.priority != request.priority: return request
+
         skey = self.set_key
 
         if self.timeout:
@@ -48,7 +53,8 @@ class RequestFilter(redis.client.Redis):
         }
         code = self.sadd(skey, self._fingerprint(request))
         if not code:
-            print(f'<RequestFilter Drop>: {json.dumps(kwargs)}')
+            print('<RequestFilter> Drop: {}'.format(kwargs))
+            return None
         else:
             return request
 
@@ -64,7 +70,7 @@ class RequestFilter(redis.client.Redis):
         args = [url]
 
         for arg in ["params", "data", "files", "auth", "cert", "json"]:
-            if request.requests_kwargs.get(arg):
+            if request.request_kwargs.get(arg):
                 args.append(request.requests_kwargs.get(arg))
 
         return get_md5(*args)
