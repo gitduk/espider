@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 from collections.abc import Generator
 from espider.default_settings import *
 from espider.network import Request, Downloader
@@ -97,6 +98,13 @@ class Spider(object):
 
         # 时间计算
         self.start_time = time.time()
+
+        # 请求优先级
+        self._priority_index = 2
+        self._request_priority_map = {
+            'start_requests': 0,
+            'parse': 1
+        }
 
     def _init_header(self):
         if self.method == 'POST':
@@ -197,6 +205,14 @@ class Spider(object):
         if isinstance(headers, str): headers = headers_to_dict(headers)
         if isinstance(cookies, str): cookies = cookies_to_dict(cookies)
         if isinstance(json, str): json = json_to_dict(json)
+
+        # 请求优先级自增
+        if not priority:
+            pre_func_name = traceback.extract_stack()[-2].name
+            if pre_func_name not in self._request_priority_map.keys():
+                self._request_priority_map[pre_func_name] = self._priority_index
+                self._priority_index += 1
+            priority = self._request_priority_map.get(pre_func_name)
 
         request_kwargs = {
             **self.request_kwargs,
