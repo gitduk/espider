@@ -269,16 +269,23 @@ class Spider(object):
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
 
-        assert isinstance(self.start_requests(), Generator), 'function start_requests must be a generator'
-
         spider_thread = threading.Thread(target=self._run)
         spider_thread.start()
         self.downloader.start()
         spider_thread.join()
 
     def _run(self):
-        for request in self.start_requests():
-            self.downloader.push(request)
+        result = self.start_requests()
+        if isinstance(result, Generator):
+            for request in self.start_requests():
+                if isinstance(request, Request):
+                    self.downloader.push(request)
+                else:
+                    print(f'Warning ... start_requests yield {request}, not a Request object')
+        elif isinstance(result, Request):
+            self.downloader.push(result)
+        else:
+            print(f'Warning ... start_requests return {result}, not a Request object')
 
     def parse(self, response, *args, **kwargs):
         pass

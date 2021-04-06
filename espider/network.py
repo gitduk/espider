@@ -132,15 +132,15 @@ class Request(threading.Thread):
         # 数据入口
         if callback:
             assert isinstance(self.downloader, Downloader)
-            e_msg = 'Invalid yield value: {}, yield value must be Request or dict object'
 
             if not self.success and self.failed_callback:
-                generator = callback(self, response, *self.func_args, **self.func_kwargs)
+                result = callback(self, response, *self.func_args, **self.func_kwargs)
             else:
-                generator = callback(response, *self.func_args, **self.func_kwargs)
+                result = callback(response, *self.func_args, **self.func_kwargs)
 
-            if isinstance(generator, Generator):
-                for _ in generator:
+            if isinstance(result, Generator):
+                e_msg = 'Invalid yield value: {}, {} must yield a Request or a dict object'
+                for _ in result:
                     if isinstance(_, Request):
                         self.downloader.push(_)
                     elif isinstance(_, dict):
@@ -150,9 +150,19 @@ class Request(threading.Thread):
                         if isinstance(data, dict):
                             self.downloader.push_item(_)
                         else:
-                            raise TypeError(e_msg.format(_))
+                            raise TypeError(e_msg.format(_, callback.__name__))
                     else:
-                        raise TypeError(e_msg.format(_))
+                        raise TypeError(e_msg.format(_, callback.__name__))
+
+            elif isinstance(result, Request):
+                self.downloader.push(result)
+            elif isinstance(result, dict):
+                self.downloader.push_item(result)
+            else:
+                raise TypeError('Invalid return value: {}, {} must return a Request or a dict object'.format(
+                    result,
+                    callback.__name__
+                ))
 
     def __repr__(self):
         return f'<{self.name} {self.__class__.__name__}> {self.method}:{self.url}, priority:{self.priority}'
