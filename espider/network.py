@@ -61,11 +61,12 @@ class Request(threading.Thread):
     def run(self):
         self.is_start = True
 
-        # 加载请求插件
+        # 加载请求中间件
         request = _load_extensions(request=self, middlewares=self.downloader.middlewares)
         self.__dict__.update(request.__dict__)
 
         start = time.time()
+        result = None
         try:
             if self.session:
                 self.request_kwargs.pop('cookies', None)
@@ -75,36 +76,30 @@ class Request(threading.Thread):
 
         except Exception as e:
             self.error = True
-            if self.error_callback:
-                self.error_callback(
-                    self, e,
-                    *self.func_args,
-                    **{**self.func_kwargs,
-                       'request_kwargs': self.request_kwargs}
-                )
+
+            # 处理错误请求
+            result = _load_extensions(
+                request=self, middlewares=self.downloader.middlewares,
+                status='error', exception=e
+            )
         else:
             if response.status_code != 200 and self.retry_count < self.max_retry:
                 self.retry_count += 1
                 time.sleep(self.retry_count * 0.1)
 
-                if self.retry_callback:
-
-                    result = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
-
-                    error_msg = 'Retry Error ... retry_pipeline must return request or response object'
-                    if isinstance(result, Request):
-                        self.__dict__.update(request.__dict__)
-                        self.run()
-                    elif isinstance(result, requests.Response):
-                        result = Response(result)
-                        self._process_callback(result, start)
-                    elif isinstance(result, Response):
-                        self._process_callback(result, start)
-                    else:
-                        raise TypeError(error_msg)
-
+                # 重新请求
+                result = _load_extensions(
+                    request=self, response=response, middlewares=self.downloader.middlewares,
+                    status='retry'
+                )
             else:
                 self._process_callback(response, start)
+
+        if isinstance(result, Request):
+            self.__dict__.update(result.__dict__)
+            self.run()
+        elif isinstance(result, Response):
+            self._process_callback(result, start)
 
     def _process_callback(self, response, start):
         if response.status_code == 200: self.success = True
@@ -113,30 +108,20 @@ class Request(threading.Thread):
         response.retry_times = self.retry_count
         response.request_kwargs = self.request_kwargs
 
-        # 加载响应插件
+        # 加载响应中间件
         response = _load_extensions(response=response, middlewares=self.downloader.middlewares)
 
-        if self.success:
-            if self.callback:
-                callback = self.callback
-            else:
-                callback = None
-        else:
-            if self.failed_callback:
-                callback = self.failed_callback
-            elif self.callback:
-                callback = self.callback
-            else:
-                callback = None
+        if not self.success:  # 处理失败的请求
+            result = _load_extensions(
+                request=self, middlewares=self.downloader.middlewares,
+                status='failed'
+            )
 
         # 数据入口
-        if callback:
+        if self.callback:
             assert isinstance(self.downloader, Downloader)
 
-            if not self.success and self.failed_callback:
-                result = callback(self, response, *self.func_args, **self.func_kwargs)
-            else:
-                result = callback(response, *self.func_args, **self.func_kwargs)
+            result = self.callback(response, *self.func_args, **self.func_kwargs)
 
             if result:
                 if isinstance(result, Generator):
@@ -147,13 +132,13 @@ class Request(threading.Thread):
                         elif isinstance(_, dict):
                             self.downloader.push_item(_)
                         elif isinstance(_, tuple):
-                            data, args, kwargs = self.downloader._process_callback_args(_)
+                            data, args, kwargs = _process_callback_args(_)
                             if isinstance(data, dict):
                                 self.downloader.push_item(_)
                             else:
-                                raise TypeError(e_msg.format(_, callback.__name__))
+                                raise TypeError(e_msg.format(_, self.callback.__name__))
                         else:
-                            raise TypeError(e_msg.format(_, callback.__name__))
+                            raise TypeError(e_msg.format(_, self.callback.__name__))
 
                 elif isinstance(result, Request):
                     self.downloader.push(result)
@@ -161,8 +146,7 @@ class Request(threading.Thread):
                     self.downloader.push_item(result)
                 else:
                     raise TypeError('Invalid return value: {}, {} must return a Request or a dict object'.format(
-                        result,
-                        callback.__name__
+                        result, self.callback.__name__
                     ))
 
     def __repr__(self):
@@ -172,10 +156,9 @@ class Request(threading.Thread):
 class Downloader(object):
     __settings__ = ['wait_time', 'max_thread', 'extensions']
 
-    def __init__(self, max_thread=None, wait_time=0, pipeline=None, end_callback=None, item_filter=None):
+    def __init__(self, max_thread=None, wait_time=0, end_callback=None, item_filter=None):
         self.thread_pool = PriorityQueue()
         self.item_pool = Queue()
-        self.pipeline = pipeline
         self.end_callback = end_callback
         self.max_thread = max_thread or 10
         self.running_thread = Queue()
@@ -187,7 +170,10 @@ class Downloader(object):
         assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
 
         # 插件
-        self.middlewares = []
+        self._middlewares = []
+
+        # 数据管道
+        self._pipelines = []
 
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
@@ -206,13 +192,32 @@ class Downloader(object):
 
         return finish
 
+    @property
+    def middleware(self):
+        return self._middlewares
+
     def add_middleware(self, middleware, index=0):
         if type(middleware).__name__ == 'type': middleware = middleware()
         middleware_ = {
             'middleware': middleware,
             'index': index
         }
-        self.middlewares.append(middleware_)
+        self._middlewares.append(middleware_)
+        self._middlewares.sort(key=lambda x: x['index'])
+
+    @property
+    def pipeline(self):
+        return self._pipelines
+
+    def add_pipeline(self, pipeline, index=0):
+        if type(pipeline).__name__ == 'type': pipeline = pipeline()
+
+        pipeline_ = {
+            'pipeline': pipeline,
+            'index': index
+        }
+        self._pipelines.append(pipeline_)
+        self._pipelines.sort(key=lambda x: x['index'])
 
     @property
     def status(self):
@@ -237,6 +242,10 @@ class Downloader(object):
                         time.sleep(1)
                         countdown -= 1
                     else:
+                        # 关闭管道
+                        for pipeline in sorted(self._pipelines, key=lambda x: x['index']):
+                            if hasattr(pipeline, 'close_pipeline'): pipeline.close_pipeline()
+
                         if self.end_callback: self.end_callback()
                         msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
                         print(msg)
@@ -254,15 +263,19 @@ class Downloader(object):
         for _ in self.distribute_task():
             try:
                 if isinstance(_, Request):
+                    # 开启线程
                     self._start_request(_)
                 elif isinstance(_, dict):
                     if self.item_filter: _ = {k: v for k, v in _.items() if k in self.item_filter}
-                    self.pipeline.item_pipeline(_, *(), **{})
+
+                    # 发送数据到数据管道
+                    self._send_data(_)
                 elif isinstance(_, tuple):
-                    data, args, kwargs = self._process_callback_args(_)
+                    data, args, kwargs = _process_callback_args(_)
                     if isinstance(data, dict):
                         if self.item_filter: data = {k: v for k, v in data.items() if k in self.item_filter}
-                        self.pipeline.item_pipeline(data, *args, **kwargs)
+                        # 发送数据到数据管道
+                        self._send_data(data, *args, **kwargs)
                     else:
                         raise TypeError(f'Invalid yield value: {_}')
                 else:
@@ -270,15 +283,10 @@ class Downloader(object):
             except Exception as e:
                 print(e)
 
-    @staticmethod
-    def _process_callback_args(args):
-        if isinstance(args, tuple):
-            data = args[0]
-            assert isinstance(data, (dict, Request, Response)), 'yield item, args, kwargs,  item be a dict'
-            args, kwargs = args_split(args[1:])
-            return data, args, kwargs
-        else:
-            raise TypeError(f'Invalid yield value: {args}')
+    def _send_data(self, data, *args, **kwargs):
+        for pipeline in self._pipelines:
+            result = pipeline.process_item(data, *args, **kwargs)
+            if result: data = result
 
     def _start_request(self, request):
 
@@ -303,3 +311,9 @@ class Downloader(object):
         return '<Downloader> max_thread: {}, count: {}, wait_time: {}'.format(
             self.max_thread, self.count, self.wait_time
         )
+
+
+def _process_callback_args(args):
+    assert isinstance(args[0], dict), 'yield item, args, kwargs,  item must be a dict'
+    args_, kwargs = args_split(args[1:])
+    return args[0], args_, kwargs

@@ -1,6 +1,7 @@
 import redis
 from w3lib.url import canonicalize_url
 from espider.utils.tools import get_md5
+from espider.parser.response import Response
 
 
 class BaseMiddleware(object):
@@ -10,6 +11,16 @@ class BaseMiddleware(object):
 
     def process_response(self, response):
         pass
+
+    def process_retry(self, request, response, *args, **kwargs):
+        print(f'[{response.status_code}] Retry-{request.retry_count}: {request.request_kwargs}')
+        return request
+
+    def process_error(self, request, exception, *args, **kwargs):
+        raise exception
+
+    def process_failed(self, request, response, *args, **kwargs):
+        print(f'Request Failed ... {response} Retry: {response.retry_times}')
 
 
 class RequestFilter(redis.client.Redis):
@@ -78,14 +89,40 @@ class RequestFilter(redis.client.Redis):
         return get_md5(*args)
 
 
-def _load_extensions(request=None, response=None, middlewares=None):
-    for middleware_ in sorted(middlewares, key=lambda x: x['index']):
-        middleware = middleware_.get('middleware')
-        if request and hasattr(middleware, 'process_request'):
-            result = middleware.process_request(request)
-            if result: request = result
-        elif response and hasattr(middleware, 'process_response'):
-            result = middleware.process_response(response)
-            if result: response = result
+def _load_extensions(request=None, response=None, middlewares=None, status=None, **kwargs):
+    result = None
 
-    return request if request else response
+    for middleware_ in middlewares:
+        middleware = middleware_.get('middleware')
+        if not status:
+            # 全局处理函数，每一个请求和响应都要经过
+            if request and hasattr(middleware, 'process_request'):
+                result = middleware.process_request(request)
+                if result: request = result
+            elif response and hasattr(middleware, 'process_response'):
+                result = middleware.process_response(response)
+                if result: response = result
+        else:
+            # 局部处理函数，特定状态的请求和响应经过
+            if status == 'retry' and hasattr(middleware, 'process_retry'):
+                result = middleware.process_retry(request, response, *request.func_args, **request.func_kwargs)
+
+            elif status == 'error' and hasattr(middleware, 'process_error'):
+
+                result = middleware.process_error(
+                    request, kwargs.get('exception'), *request.func_args, **request.func_kwargs
+                )
+
+            elif status == 'failed' and hasattr(middleware, 'process_failed'):
+                result = middleware.process_failed(request, response, *request.func_args, **request.func_kwargs)
+            else:
+                continue
+
+            if type(result).__name__ == 'Request':
+                request = result
+            elif isinstance(result, Response):
+                response = result
+            else:
+                raise TypeError(f'process_{status} method must return Request or Response object')
+
+    return result

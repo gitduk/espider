@@ -7,7 +7,6 @@ from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
 from espider.parser.response import Response
-from espider.pipelines import BasePipeline
 from espider.settings import Setting
 from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
@@ -72,7 +71,6 @@ class Spider(object):
 
         self.downloader = Downloader(
             **self.downloader_setting,
-            pipeline=BasePipeline(),
             end_callback=self.end,
             item_filter=self.item_filter,
         )
