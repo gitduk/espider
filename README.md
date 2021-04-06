@@ -10,5 +10,6 @@ Simple Sipder
 
 - 2020-04-06
     - [x] 修复 start_requests 错误提示
-    - [ ] 请求和响应扩展合并为下载中间件
     - [x] 自动设置请求优先级
+    - [ ] 请求和响应扩展合并为下载中间件
+    - [ ] settings 像 scrapy 看齐

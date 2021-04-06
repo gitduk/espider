@@ -5,7 +5,7 @@ from queue import Queue
 import urllib3
 from copy import deepcopy
 from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
-from espider.extensions import _load_extensions
+from espider.middlewares import _load_extensions
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue
 import espider.utils.requests as requests
@@ -62,7 +62,7 @@ class Request(threading.Thread):
         self.is_start = True
 
         # 加载请求插件
-        request = _load_extensions(target=self, extensions=self.downloader.request_extensions)
+        request = _load_extensions(request=self, middlewares=self.downloader.middlewares)
         self.__dict__.update(request.__dict__)
 
         start = time.time()
@@ -89,19 +89,19 @@ class Request(threading.Thread):
 
                 if self.retry_callback:
 
-                    request, *result = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
-                    if request:
-                        error_msg = 'Retry Error ... retry_pipeline must return request or response object'
-                        if not isinstance(request, Request): raise TypeError(error_msg)
-                        self.__dict__.update(request.__dict__)
+                    result = self.retry_callback(self, response, *self.func_args, **self.func_kwargs)
 
-                        if result:
-                            resp = result[0]
-                            if isinstance(resp, requests.Response): resp = Response(resp)
-                            if not isinstance(resp, Response): raise TypeError(error_msg)
-                            self._process_callback(resp, start)
-                        else:
-                            self.run()
+                    error_msg = 'Retry Error ... retry_pipeline must return request or response object'
+                    if isinstance(result, Request):
+                        self.__dict__.update(request.__dict__)
+                        self.run()
+                    elif isinstance(result, requests.Response):
+                        result = Response(result)
+                        self._process_callback(result, start)
+                    elif isinstance(result, Response):
+                        self._process_callback(result, start)
+                    else:
+                        raise TypeError(error_msg)
 
             else:
                 self._process_callback(response, start)
@@ -114,7 +114,7 @@ class Request(threading.Thread):
         response.request_kwargs = self.request_kwargs
 
         # 加载响应插件
-        response = _load_extensions(target=response, extensions=self.downloader.response_extensions)
+        response = _load_extensions(response=response, middlewares=self.downloader.middlewares)
 
         if self.success:
             if self.callback:
@@ -138,31 +138,32 @@ class Request(threading.Thread):
             else:
                 result = callback(response, *self.func_args, **self.func_kwargs)
 
-            if isinstance(result, Generator):
-                e_msg = 'Invalid yield value: {}, {} must yield a Request or a dict object'
-                for _ in result:
-                    if isinstance(_, Request):
-                        self.downloader.push(_)
-                    elif isinstance(_, dict):
-                        self.downloader.push_item(_)
-                    elif isinstance(_, tuple):
-                        data, args, kwargs = self.downloader._process_callback_args(_)
-                        if isinstance(data, dict):
+            if result:
+                if isinstance(result, Generator):
+                    e_msg = 'Invalid yield value: {}, {} must yield a Request or a dict object'
+                    for _ in result:
+                        if isinstance(_, Request):
+                            self.downloader.push(_)
+                        elif isinstance(_, dict):
                             self.downloader.push_item(_)
+                        elif isinstance(_, tuple):
+                            data, args, kwargs = self.downloader._process_callback_args(_)
+                            if isinstance(data, dict):
+                                self.downloader.push_item(_)
+                            else:
+                                raise TypeError(e_msg.format(_, callback.__name__))
                         else:
                             raise TypeError(e_msg.format(_, callback.__name__))
-                    else:
-                        raise TypeError(e_msg.format(_, callback.__name__))
 
-            elif isinstance(result, Request):
-                self.downloader.push(result)
-            elif isinstance(result, dict):
-                self.downloader.push_item(result)
-            else:
-                raise TypeError('Invalid return value: {}, {} must return a Request or a dict object'.format(
-                    result,
-                    callback.__name__
-                ))
+                elif isinstance(result, Request):
+                    self.downloader.push(result)
+                elif isinstance(result, dict):
+                    self.downloader.push_item(result)
+                else:
+                    raise TypeError('Invalid return value: {}, {} must return a Request or a dict object'.format(
+                        result,
+                        callback.__name__
+                    ))
 
     def __repr__(self):
         return f'<{self.name} {self.__class__.__name__}> {self.method}:{self.url}, priority:{self.priority}'
@@ -186,8 +187,7 @@ class Downloader(object):
         assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
 
         # 插件
-        self.request_extensions = []
-        self.response_extensions = []
+        self.middlewares = []
 
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
@@ -205,6 +205,14 @@ class Downloader(object):
                 finish = False
 
         return finish
+
+    def add_middleware(self, middleware, index=0):
+        if type(middleware).__name__ == 'type': middleware = middleware()
+        middleware_ = {
+            'middleware': middleware,
+            'index': index
+        }
+        self.middlewares.append(middleware_)
 
     @property
     def status(self):

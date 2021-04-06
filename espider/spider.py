@@ -293,24 +293,3 @@ class Spider(object):
     def end(self):
         cost_time = human_time(time.time() - self.start_time)
         print('Time: {} day {} hour {} minute {:.3f} second'.format(*cost_time))
-
-    def _add_extension(self, extension, target=None, *args, **kwargs):
-        if type(extension).__name__ == 'type':
-            extension = extension()
-
-        new_extension = {
-            'extension': extension,
-            'args': args,
-            'kwargs': kwargs,
-            'count': 0
-        }
-        if target == 'request':
-            self.downloader.request_extensions.append(new_extension)
-        elif target == 'response':
-            self.downloader.response_extensions.append(new_extension)
-
-    def add_request_extension(self, extension, *args, **kwargs):
-        self._add_extension(extension, target='request', *args, **kwargs)
-
-    def add_response_extension(self, extension, *args, **kwargs):
-        self._add_extension(extension, target='response', *args, **kwargs)

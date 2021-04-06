@@ -3,9 +3,12 @@ from w3lib.url import canonicalize_url
 from espider.utils.tools import get_md5
 
 
-class BaseExtension(object):
+class BaseMiddleware(object):
 
-    def process(self, target):
+    def process_request(self, request):
+        pass
+
+    def process_response(self, response):
         pass
 
 
@@ -33,7 +36,7 @@ class RequestFilter(redis.client.Redis):
         self.timeout = timeout
         self.priority = None
 
-    def process(self, request, *args, **kwargs):
+    def process_request(self, request):
 
         # 过滤层级
         if self.priority != request.priority: return request
@@ -75,24 +78,14 @@ class RequestFilter(redis.client.Redis):
         return get_md5(*args)
 
 
-def _load_extensions(target, extensions):
-    for extension_dict in extensions:
-        extension, args, kwargs = extension_dict.get('extension'), extension_dict.get('args'), extension_dict.get(
-            'kwargs')
-        assert hasattr(extension, 'process'), 'extension must have process method'
+def _load_extensions(request=None, response=None, middlewares=None):
+    for middleware_ in sorted(middlewares, key=lambda x: x['index']):
+        middleware = middleware_.get('middleware')
+        if request and hasattr(middleware, 'process_request'):
+            result = middleware.process_request(request)
+            if result: request = result
+        elif response and hasattr(middleware, 'process_response'):
+            result = middleware.process_response(response)
+            if result: response = result
 
-        if args and kwargs:
-            result = extension.process(target, *args, **kwargs)
-        elif args:
-            result = extension.process(target, *args)
-        elif kwargs:
-            result = extension.process(target, **kwargs)
-        else:
-            result = extension.process(target)
-
-        if result: target = result
-
-        if 'count' not in extension_dict.keys(): extension_dict['count'] = 0
-        extension_dict['count'] += 1
-
-    return target
+    return request if request else response
