@@ -19,12 +19,8 @@ class Spider(object):
     """
 
     __custom_setting__ = {
-        'downloader': {
-            'max_thread': 10
-        },
-        'request': {
-            'max_retry': 3
-        }
+        'max_thread': 10,
+        'max_retry': 3
     }
 
     def __init__(
@@ -63,16 +59,12 @@ class Spider(object):
         self.setting.__dict__.update(self.__custom_setting__)
 
         # 加载 downloader setting
-        self.downloader_setting = self.setting.get('downloader') if self.setting.get('downloader') else {}
-        self.request_setting = self.setting.get('request') if self.setting.get('request') else {}
-
-        # 过滤器
-        self.item_filter = []
+        self.downloader_setting = {k: v for k, v in self.setting.items() if k in Downloader.__settings__}
+        self.request_setting = {k: v for k, v in self.setting.items() if k in Request.__settings__}
 
         self.downloader = Downloader(
             **self.downloader_setting,
             end_callback=self.end,
-            item_filter=self.item_filter,
         )
 
         # 连接数据库
@@ -103,6 +95,9 @@ class Spider(object):
             'start_requests': 0,
             'parse': 1
         }
+
+        # log
+        self.show_request_detail = False
 
     def _init_header(self):
         if self.method == 'POST':
@@ -225,6 +220,7 @@ class Spider(object):
             'downloader': self.downloader,
             'args': args,
             'session': self.session if use_session else None,
+            'show_detail': self.show_request_detail,
             **self.request_setting,
             **kwargs,
         }

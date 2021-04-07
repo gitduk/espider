@@ -42,10 +42,8 @@ class Request(threading.Thread):
         self.priority = kwargs.get('priority') or 0
         self.max_retry = kwargs.get('max_retry') or 0
         self.callback = kwargs.get('callback')
-        self.failed_callback = self.downloader.pipeline.failed_pipeline
-        self.error_callback = self.downloader.pipeline.error_pipeline
-        self.retry_callback = self.downloader.pipeline.retry_pipeline
         self.session = kwargs.get('session')
+        self.show_detail = kwargs.get('show_detail')
         self.retry_count = 0
         self.is_start = False
         self.success = False
@@ -66,13 +64,26 @@ class Request(threading.Thread):
         self.__dict__.update(request.__dict__)
 
         start = time.time()
-        result = None
         try:
+            if self.show_detail:
+                print('{} Start request {} [{}] body: {} ...'.format(
+                    self.name,
+                    self.request_kwargs.get('url'),
+                    self.method,
+                    self.request_kwargs.get('body') or self.request_kwargs.get('json')))
+
             if self.session:
                 self.request_kwargs.pop('cookies', None)
                 response = self.session.request(**self.request_kwargs)
             else:
                 response = requests.request(**self.request_kwargs)
+
+            if self.show_detail:
+                print('{} Downloaded request {} [{}] body: {}'.format(
+                    self.name,
+                    self.request_kwargs.get('url'),
+                    self.method,
+                    self.request_kwargs.get('body') or self.request_kwargs.get('json')))
 
         except Exception as e:
             self.error = True
@@ -82,6 +93,8 @@ class Request(threading.Thread):
                 request=self, middlewares=self.downloader.middlewares,
                 status='error', exception=e
             )
+            self._process_result(result, start)
+
         else:
             if response.status_code != 200 and self.retry_count < self.max_retry:
                 self.retry_count += 1
@@ -92,9 +105,12 @@ class Request(threading.Thread):
                     request=self, response=response, middlewares=self.downloader.middlewares,
                     status='retry'
                 )
+                self._process_result(result, start)
+
             else:
                 self._process_callback(response, start)
 
+    def _process_result(self, result, start):
         if isinstance(result, Request):
             self.__dict__.update(result.__dict__)
             self.run()
@@ -113,9 +129,16 @@ class Request(threading.Thread):
 
         if not self.success:  # 处理失败的请求
             result = _load_extensions(
-                request=self, middlewares=self.downloader.middlewares,
+                request=self, response=response, middlewares=self.downloader.middlewares,
                 status='failed'
             )
+            if isinstance(result, Request):
+                self.__dict__.update(result.__dict__)
+                self.run()
+                return
+            elif isinstance(result, Response):
+                self._process_callback(result, start)
+                return
 
         # 数据入口
         if self.callback:
@@ -154,9 +177,9 @@ class Request(threading.Thread):
 
 
 class Downloader(object):
-    __settings__ = ['wait_time', 'max_thread', 'extensions']
+    __settings__ = ['wait_time', 'max_thread']
 
-    def __init__(self, max_thread=None, wait_time=0, end_callback=None, item_filter=None):
+    def __init__(self, max_thread=None, wait_time=0, end_callback=None):
         self.thread_pool = PriorityQueue()
         self.item_pool = Queue()
         self.end_callback = end_callback
@@ -164,10 +187,10 @@ class Downloader(object):
         self.running_thread = Queue()
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0, 'Error': 0}
         self.wait_time = wait_time
-        self.item_filter = item_filter
+        self.item_filter = []
         self.close_countdown = 10
         self._close = False
-        assert isinstance(item_filter, Iterable), 'item_filter must be a iterable object'
+        assert isinstance(self.item_filter, Iterable), 'item_filter must be a iterable object'
 
         # 插件
         self._middlewares = []
@@ -193,7 +216,7 @@ class Downloader(object):
         return finish
 
     @property
-    def middleware(self):
+    def middlewares(self):
         return self._middlewares
 
     def add_middleware(self, middleware, index=0):
@@ -211,6 +234,9 @@ class Downloader(object):
 
     def add_pipeline(self, pipeline, index=0):
         if type(pipeline).__name__ == 'type': pipeline = pipeline()
+
+        if not hasattr(pipeline, 'process_item'):
+            raise AttributeError('Pipeline Object must have process_item method')
 
         pipeline_ = {
             'pipeline': pipeline,
@@ -243,8 +269,12 @@ class Downloader(object):
                         countdown -= 1
                     else:
                         # 关闭管道
-                        for pipeline in sorted(self._pipelines, key=lambda x: x['index']):
+                        for pipeline in self._pipelines:
                             if hasattr(pipeline, 'close_pipeline'): pipeline.close_pipeline()
+
+                        # 关闭中间件
+                        for middleware in self._middlewares:
+                            if hasattr(middleware, 'close_middleware'): middleware.close_middleware()
 
                         if self.end_callback: self.end_callback()
                         msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
@@ -284,8 +314,8 @@ class Downloader(object):
                 print(e)
 
     def _send_data(self, data, *args, **kwargs):
-        for pipeline in self._pipelines:
-            result = pipeline.process_item(data, *args, **kwargs)
+        for _pipeline in self._pipelines:
+            result = _pipeline.get('pipeline').process_item(data, *args, **kwargs)
             if result: data = result
 
     def _start_request(self, request):

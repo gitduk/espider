@@ -2,12 +2,17 @@ import json
 import os
 
 
-class Setting(object):
-    __setting_module_list__ = [
-        'downloader', 'request'
-    ]
-
+class BaseSetting(object):
     def __init__(self):
+        self.max_thread = 10
+        self.max_retry = 3
+        self.wait_time = 0
+
+
+class Setting(BaseSetting):
+    def __init__(self):
+        super().__init__()
+
         try:
             # 加载用户配置
             if os.path.exists('settings.json'):
@@ -21,11 +26,8 @@ class Setting(object):
     def get(self, key, option=None):
         return self.__dict__.get(key, option)
 
-    def update(self, key, **kwargs):
-        if key in self.__dict__.keys() and isinstance(self.__dict__.get(key), dict):
-            self.__dict__[key].update_spider(kwargs)
-        else:
-            self.__dict__[key] = kwargs
+    def items(self):
+        return self.__dict__.items()
 
     def __repr__(self):
-        return json.dumps({k: v for k, v in self.__dict__.items() if k in self.__setting_module_list__})
+        return json.dumps(self.__dict__)

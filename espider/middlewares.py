@@ -13,17 +13,19 @@ class BaseMiddleware(object):
         pass
 
     def process_retry(self, request, response, *args, **kwargs):
-        print(f'[{response.status_code}] Retry-{request.retry_count}: {request.request_kwargs}')
-        return request
+        pass
 
     def process_error(self, request, exception, *args, **kwargs):
-        raise exception
+        pass
 
     def process_failed(self, request, response, *args, **kwargs):
-        print(f'Request Failed ... {response} Retry: {response.retry_times}')
+        pass
+
+    def close_middleware(self):
+        pass
 
 
-class RequestFilter(redis.client.Redis):
+class RequestFilter(BaseMiddleware):
     __REDIS_KEYS__ = [
         'db', 'password', 'socket_timeout',
         'socket_connect_timeout',
@@ -39,13 +41,14 @@ class RequestFilter(redis.client.Redis):
         'health_check_interval', 'client_name', 'username'
     ]
 
-    def __init__(self, host='localhost', port=6379, set_key=None, timeout=None, **kwargs):
+    def __init__(self, host='localhost', port=6379, set_key=None, timeout=None, priority=None, **kwargs):
         self.redis_kwargs = {k: v for k, v in kwargs.items() if k in self.__REDIS_KEYS__}
-        super().__init__(host=host, port=port, **self.redis_kwargs)
+        self.redis_db = redis.Redis(host=host, port=port, **self.redis_kwargs)
 
         self.set_key = set_key or 'urls'
         self.timeout = timeout
-        self.priority = None
+        self.priority = priority
+        self.number = 0
 
     def process_request(self, request):
 
@@ -55,8 +58,8 @@ class RequestFilter(redis.client.Redis):
         skey = self.set_key
 
         if self.timeout:
-            if self.exists(skey) and self.ttl(skey) == -1:
-                self.expire(skey, self.timeout)
+            if self.redis_db.exists(skey) and self.redis_db.ttl(skey) == -1:
+                self.redis_db.expire(skey, self.timeout)
 
         kwargs = {
             'url': request.url,
@@ -64,9 +67,10 @@ class RequestFilter(redis.client.Redis):
             'body': request.request_kwargs.get('data'),
             'json': request.request_kwargs.get('json')
         }
-        code = self.sadd(skey, self._fingerprint(request))
+        code = self.redis_db.sadd(skey, self._fingerprint(request))
         if not code:
             print('<RequestFilter> Drop: {}'.format(kwargs))
+            self.number += 1
             return None
         else:
             return request
@@ -88,10 +92,12 @@ class RequestFilter(redis.client.Redis):
 
         return get_md5(*args)
 
+    def close_middleware(self):
+        print('RequestFilter({}): Drop {} request'.format(self.priority, self.number))
+
 
 def _load_extensions(request=None, response=None, middlewares=None, status=None, **kwargs):
     result = None
-
     for middleware_ in middlewares:
         middleware = middleware_.get('middleware')
         if not status:
@@ -122,7 +128,8 @@ def _load_extensions(request=None, response=None, middlewares=None, status=None,
                 request = result
             elif isinstance(result, Response):
                 response = result
-            else:
-                raise TypeError(f'process_{status} method must return Request or Response object')
 
-    return result
+    if not status:
+        return request if request else response
+    else:
+        return result
