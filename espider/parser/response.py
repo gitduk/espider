@@ -348,6 +348,7 @@ class Response(res):
 
     def __get_query_value(self, func, query, *args, **kwargs):
         queries = query.split('||')
+        values = []
         for qu in queries:
             if '&&' in qu:
                 delimiter = kwargs.pop('delimiter')
@@ -359,8 +360,20 @@ class Response(res):
             else:
                 value = func(qu, *args, **kwargs)
 
-            if value: return value
+            if value:
+                if isinstance(value, str):
+                    value = value.strip()
+                    if value: values.append(value)
+                elif isinstance(value, list):
+                    _value = []
+                    for i in value:
+                        if not i: continue
+                        if isinstance(i, str) and not i.strip(): continue
+                        _value.append(i)
+                    values.append(_value)
 
+        if values:
+            return values[0] if len(values) == 1 else values
         else:
             return ''
 

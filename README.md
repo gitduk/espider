@@ -1,10 +1,19 @@
-Simple Sipder
+# Easy Sipder
+
+---
+
+Easy Spider 主要有四大模块：
+
+- Spider 负责推送请求到请求线程池
+- Downloader 负责启动请求与数据，请求在启动前会经过请求处理程序，响应在下载后会经过响应处理程序
+- Pipeline 负责清理数据，数据的持久化等工作
+
+流程图如下
+
+![epsider流程图](https://ftp.bmp.ovh/imgs/2021/04/76657cd1da61f203.png)
 
 
-
-> 流程图
-
-![epsider流程图](https://ftp.bmp.ovh/imgs/2021/04/d835649d0bdd498e.png)
+---
 
 # TODO
 

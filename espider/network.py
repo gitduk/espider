@@ -189,6 +189,7 @@ class Downloader(object):
         self.wait_time = wait_time
         self.item_filter = []
         self.close_countdown = 10
+        self.distribute_item = True
         self._close = False
         assert isinstance(self.item_filter, Iterable), 'item_filter must be a iterable object'
 
@@ -281,16 +282,18 @@ class Downloader(object):
                         print(msg)
                         self._close = True
 
-            try:
-                item = self.item_pool.get_nowait()
-            except:
-                pass
-            else:
-                yield item
+            if self.distribute_item:
+                try:
+                    item = self.item_pool.get_nowait()
+                except:
+                    pass
+                else:
+                    yield item
 
     # 数据出口, 分发任务，数据，响应
     def start(self):
         for _ in self.distribute_task():
+            if not _: continue
             try:
                 if isinstance(_, Request):
                     # 开启线程
