@@ -358,7 +358,7 @@ class Response(res):
                     if v: value_list.append(v)
                 value = delimiter.join(value_list) if delimiter else value_list
             else:
-                value = func(qu, *args, **kwargs)
+                value = func(qu.strip(), *args, **kwargs)
 
             if value:
                 if isinstance(value, str):

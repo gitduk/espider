@@ -11,6 +11,7 @@ from espider.settings import Setting
 from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
     dict_to_json, update, search, delete, strip, replace, random_list, human_time
+from selenium import webdriver
 
 
 class Spider(object):
@@ -189,6 +190,10 @@ class Spider(object):
     def update_cookie_from_resp(self, response):
         if hasattr(response, 'cookies'):
             self.spider['cookies'] = merge_cookies(self.spider.get('cookies'), response.cookies)
+
+    @staticmethod
+    def chrome_driver(options=None):
+        return webdriver.Chrome(options=options)
 
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
                 args=None, priority=None, use_session=None, **kwargs):
