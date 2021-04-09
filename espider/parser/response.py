@@ -1,29 +1,17 @@
-# -*- coding: utf-8 -*-
-"""
-Created on 2018-07-26 11:40:28
----------
-@summary:
----------
-@author: Boris
-@email:  boris_liu@foxmail.com
-"""
-
 import datetime
 import re as _re
 from urllib.parse import urlparse, urlunparse, urljoin
-
 from espider.utils.tools import search
 from espider.utils.bs4_dammit import UnicodeDammit
 from espider.parser.selector import Selector
 from requests.cookies import RequestsCookieJar
 from requests.models import Response as res
 from w3lib.encoding import http_content_type_encoding, html_body_declared_encoding
+import webbrowser
 
 FAIL_ENCODING = "ISO-8859-1"
 
-# html 源码中的特殊字符，需要删掉，否则会影响etree的构建
 SPECIAL_CHARACTERS = [
-    # 移除控制字符 全部字符列表 https://zh.wikipedia.org/wiki/%E6%8E%A7%E5%88%B6%E5%AD%97%E7%AC%A6
     "[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]"
 ]
 
@@ -335,55 +323,100 @@ class Response(res):
     def re_first_map(self, map, default=None, replace_entities=False, **kwargs):
         return self._query_from_map(self.re_first, map, default=default, replace_entities=replace_entities, **kwargs)
 
-    def _query_from_map(self, func, map: dict, *args, **kwargs):
+    def _query_from_map(self, func, map: dict, **kwargs):
         data = {}
         for key, value in map.items():
             if isinstance(value, str):
-                data[key] = self.__get_query_value(func, value, *args, **kwargs)
+                data[key] = func(value, **kwargs)
             elif isinstance(value, dict):
-                data[key] = self._query_from_map(func, value, *args, **kwargs)
+                data[key] = self._query_from_map(func, value, **kwargs)
             else:
                 print(f'Warning ... query not support {type(value)}')
         return data
 
-    def __get_query_value(self, func, query, *args, **kwargs):
-        queries = query.split('||')
-        values = []
-        for qu in queries:
-            if '&&' in qu:
-                delimiter = kwargs.pop('delimiter')
-                value_list = []
-                for _ in qu.split('&&'):
-                    v = func(_.strip(), *args, **kwargs)
-                    if v: value_list.append(v)
-                value = delimiter.join(value_list) if delimiter else value_list
-            else:
-                value = func(qu.strip(), *args, **kwargs)
+    def __match(self, query, methods, **kwargs):
+        result = methods.get('re')(query, **kwargs)
+        if result: return result
 
-            if value:
-                if isinstance(value, str):
-                    value = value.strip()
-                    if value: values.append(value)
-                elif isinstance(value, list):
-                    _value = []
-                    for i in value:
-                        if not i: continue
-                        if isinstance(i, str) and not i.strip(): continue
-                        _value.append(i)
-                    values.append(_value)
-
-        if values:
-            return values[0] if len(values) == 1 else values
+        try:
+            result = methods.get('css')(query, **kwargs)
+        except:
+            pass
         else:
-            return ''
+            return result or ''
+
+        try:
+            result = methods.get('xpath')(query, **kwargs)
+        except:
+            pass
+        else:
+            return result or ''
+
+        if not result: return ''
+
+    def _match(self, query, methods, delimiter=None, **kwargs):
+        querys = (_.strip() for _ in query.split('||'))
+        results = []
+        for q in querys:
+
+            if '&&' in q:
+                _results = []
+
+                for _q in q.split('&&'):
+                    result = self.__match(_q, methods, **kwargs)
+                    if result and isinstance(result, str):
+                        if result.strip(): _results.append(result)
+                    elif isinstance(result, list):
+                        _result = [v for v in result if v]
+                        if _result: _results.append(_result)
+
+                if delimiter: _results = delimiter.join(v for v in _results if v)
+                if _results: results.append(_results)
+
+            else:
+                result = self.__match(q, methods, **kwargs)
+                if result and isinstance(result, str):
+                    if result.strip(): results.append(result)
+                elif isinstance(result, list):
+                    _result = [v for v in result if v]
+                    if _result: results.append(_result)
+
+        return results[0] if results else ''
+
+    def match_first(self, query, **kwargs):
+        methods = {
+            're': self.re_first,
+            'css': self.css_first,
+            'xpath': self.xpath_first
+        }
+
+        return self._match(query, methods, **kwargs)
+
+    def match(self, query, **kwargs):
+        methods = {
+            're': self.re,
+            'css': self.css,
+            'xpath': self.xpath
+        }
+        return self._match(query, methods, **kwargs)
+
+    def match_first_map(self, map, **kwargs):
+        return self._query_from_map(self.match_first, map, **kwargs)
+
+    def match_map(self, map, **kwargs):
+        return self._query_from_map(self.match, map, **kwargs)
+
+    def open(self, path=None):
+        self.save_html(path)
+        webbrowser.open(path or 'index.html')
 
     def save_html(self, path=None):
-        with open(path or "index.html", "w", encoding=self.encoding, errors="replace") as html:
-            self.encoding_errors = "replace"
+        with open(path or 'index.html', 'w', encoding=self.encoding, errors='replace') as html:
+            self.encoding_errors = 'replace'
             html.write(self.text)
 
     def save_content(self, path):
-        with open(path, "wb") as html:
+        with open(path, 'wb') as html:
             html.write(self.content)
 
     def __del__(self):
