@@ -5,10 +5,10 @@ from queue import Queue
 import urllib3
 from copy import deepcopy
 from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
-from espider.middlewares import _load_extensions
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
 import espider.utils.requests as requests
+from espider.middlewares import BaseMiddleware
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -56,6 +56,9 @@ class Request(threading.Thread):
         self.func_args, self.func_kwargs = args_split(deepcopy(args) or ())
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
+        # 加载 BaseMiddleware
+        if not self.downloader.middlewares: self.downloader.add_middleware(BaseMiddleware)
+
     def run(self):
         if isinstance(self.request_kwargs.get('headers'), str):
             self.request_kwargs['headers'] = headers_to_dict(self.request_kwargs.get('headers'))
@@ -67,8 +70,8 @@ class Request(threading.Thread):
         self.is_start = True
 
         # 加载中间件
-        request = _load_extensions(request=self, middlewares=self.downloader.middlewares)
-        self.__dict__.update(request.__dict__)
+        request = _load_download_middleware(request=self, middlewares=self.downloader.middlewares)
+        if request: self.__dict__.update(request.__dict__)
 
         start = time.time()
         try:
@@ -96,10 +99,7 @@ class Request(threading.Thread):
             self.error = True
 
             # 处理错误请求
-            result = _load_extensions(
-                request=self, middlewares=self.downloader.middlewares,
-                status='error', exception=e
-            )
+            result = _load_error_middleware(self, middlewares=self.downloader.middlewares, exception=e)
             self._process_result(result, start)
 
         else:
@@ -108,10 +108,7 @@ class Request(threading.Thread):
                 time.sleep(self.retry_count * 0.1)
 
                 # 重新请求
-                result = _load_extensions(
-                    request=self, response=response, middlewares=self.downloader.middlewares,
-                    status='retry'
-                )
+                result = _load_retry_middleware(self, response, middlewares=self.downloader.middlewares)
                 self._process_result(result, start)
 
             else:
@@ -132,19 +129,17 @@ class Request(threading.Thread):
         response.request_kwargs = self.request_kwargs
 
         # 加载中间件
-        response = _load_extensions(response=response, middlewares=self.downloader.middlewares)
+        response_ = _load_download_middleware(
+            response=response, middlewares=self.downloader.middlewares, args=self.func_args, kwargs=self.func_kwargs
+        )
+        if response_: response = response_
 
         if not self.success:  # 处理失败的请求
-            result = _load_extensions(
-                request=self, response=response, middlewares=self.downloader.middlewares,
-                status='failed'
-            )
-            if isinstance(result, Request):
-                self.__dict__.update(result.__dict__)
-                self.run()
-                return
-            elif isinstance(result, Response):
-                self._process_callback(result, start)
+            result = _load_failed_middleware(self, response, middlewares=self.downloader.middlewares)
+
+            # 当result为响应时，务必保证请求成功，否则陷入死循环
+            if result:
+                self._process_result(result, start)
                 return
 
         # 数据入口
@@ -357,3 +352,68 @@ def _process_callback_args(args):
     assert isinstance(args[0], dict), 'yield item, args, kwargs,  item must be a dict'
     args_, kwargs = args_split(args[1:])
     return args[0], args_, kwargs
+
+
+def _load_download_middleware(request=None, response=None, middlewares=None, args=None, kwargs=None):
+    if not middlewares: return None
+
+    middlewares_ = (_.get('middleware') for _ in middlewares)
+
+    if request:
+        for middleware in middlewares_:
+            # 全局处理函数，每一个请求和响应都要经过
+            if hasattr(middleware, 'process_request'):
+                result = middleware.process_request(request, *request.func_args, **request.func_kwargs)
+                if result: request = result
+
+        return request
+
+    else:
+        for middleware in middlewares_:
+            # 全局处理函数，每一个请求和响应都要经过
+            if hasattr(middleware, 'process_response'):
+                result = middleware.process_response(response, *args, **kwargs)
+                if result: response = result
+
+        return response
+
+
+def _load_retry_middleware(request, response, middlewares=None):
+    if not middlewares: return None
+
+    result = None
+    for middleware_ in middlewares:
+        middleware = middleware_.get('middleware')
+        if hasattr(middleware, 'process_retry'):
+            result = middleware.process_retry(request, response, *request.func_args, **request.func_kwargs)
+            if isinstance(result, Request): request = result
+            if isinstance(result, Response): response = result
+
+    return result
+
+
+def _load_error_middleware(request, middlewares=None, exception=None):
+    if not middlewares: return None
+
+    result = None
+    for middleware_ in middlewares:
+        middleware = middleware_.get('middleware')
+        if hasattr(middleware, 'process_error'):
+            result = middleware.process_error(request, exception, *request.func_args, **request.func_kwargs)
+            if result: request = result
+
+    return result
+
+
+def _load_failed_middleware(request, response, middlewares=None):
+    if not middlewares: return None
+
+    result = None
+    for middleware_ in middlewares:
+        middleware = middleware_.get('middleware')
+        if hasattr(middleware, 'process_failed'):
+            result = middleware.process_failed(request, response, *request.func_args, **request.func_kwargs)
+            if isinstance(result, Request): request = result
+            if isinstance(result, Response): response = result
+
+    return result
