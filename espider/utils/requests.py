@@ -1,6 +1,9 @@
 from requests.sessions import Session as  BaseSession
+
 from espider.parser.response import Response
 from requests.models import Request
+
+from espider.utils.tools import headers_to_dict, cookies_to_dict
 
 
 class Session(BaseSession):
@@ -17,6 +20,10 @@ class Session(BaseSession):
                 params=None, data=None, headers=None, cookies=None, files=None,
                 auth=None, timeout=None, allow_redirects=True, proxies=None,
                 hooks=None, stream=None, verify=None, cert=None, json=None):
+
+        if isinstance(headers, str): headers = headers_to_dict(headers)
+        if isinstance(cookies, str): cookies = cookies_to_dict(cookies)
+
         req = Request(
             method=method.upper(),
             url=url,
@@ -92,6 +99,8 @@ class Session(BaseSession):
 
 
 def request(method, url, **kwargs):
+    if isinstance(kwargs.get('headers'), str): kwargs['headers'] = headers_to_dict(kwargs.get('headers'))
+    if isinstance(kwargs.get('cookies'), str): kwargs['cookies'] = cookies_to_dict(kwargs.get('cookies'))
     with Session() as session:
         return session.request(method=method, url=url, **kwargs)
 

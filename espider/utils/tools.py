@@ -100,7 +100,8 @@ def headers_to_dict(headers):
     if isinstance(headers, dict): return headers
 
     if not headers: return {}
-    return {_.split(':')[0].strip(): _.split(':')[1].strip() for _ in headers.split('\n')}
+    return {_.split(':', 1)[0].strip(): _.split(':', 1)[1].strip() for _ in headers.split('\n') if
+            len(_.split(':', 1)) == 2}
 
 
 def cookies_to_dict(cookies):
@@ -358,7 +359,7 @@ def args_split(args: tuple):
 
 
 def random_list(stop, start=0, step=1):
-    numbers = list(range(start, stop, step))
+    numbers = list(range(start, stop + start, step))
     random.shuffle(numbers)
     return numbers
 

@@ -200,10 +200,6 @@ class Spider(object):
 
         if use_session is None: use_session = self.use_session
 
-        if isinstance(headers, str): headers = headers_to_dict(headers)
-        if isinstance(cookies, str): cookies = cookies_to_dict(cookies)
-        if isinstance(json, str): json = json_to_dict(json)
-
         # 请求优先级自增
         if not priority:
             pre_func_name = traceback.extract_stack()[-2].name

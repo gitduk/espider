@@ -7,7 +7,7 @@ from copy import deepcopy
 from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.middlewares import _load_extensions
 from espider.parser.response import Response
-from espider.utils.tools import args_split, PriorityQueue
+from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
 import espider.utils.requests as requests
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -57,9 +57,16 @@ class Request(threading.Thread):
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
     def run(self):
+        if isinstance(self.request_kwargs.get('headers'), str):
+            self.request_kwargs['headers'] = headers_to_dict(self.request_kwargs.get('headers'))
+        if isinstance(self.request_kwargs.get('cookies'), str):
+            self.request_kwargs['cookies'] = cookies_to_dict(self.request_kwargs.get('cookies'))
+        if isinstance(self.request_kwargs.get('json'), str):
+            self.request_kwargs['json'] = json_to_dict(self.request_kwargs.get('json'))
+
         self.is_start = True
 
-        # 加载请求中间件
+        # 加载中间件
         request = _load_extensions(request=self, middlewares=self.downloader.middlewares)
         self.__dict__.update(request.__dict__)
 
@@ -124,7 +131,7 @@ class Request(threading.Thread):
         response.retry_times = self.retry_count
         response.request_kwargs = self.request_kwargs
 
-        # 加载响应中间件
+        # 加载中间件
         response = _load_extensions(response=response, middlewares=self.downloader.middlewares)
 
         if not self.success:  # 处理失败的请求
