@@ -2,7 +2,7 @@ import threading
 import time
 import traceback
 from collections.abc import Generator
-from espider.default_settings import *
+from espider.default_fields import *
 from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
@@ -100,6 +100,12 @@ class Spider(object):
         # log
         self.show_request_detail = False
 
+    def load_setting(self, setting):
+        assert isinstance(setting, Setting)
+        self.downloader_setting = {k: v for k, v in setting.items() if k in Downloader.__settings__}
+        self.request_setting = {k: v for k, v in setting.items() if k in Request.__settings__}
+        self.downloader.__dict__.update(self.downloader_setting)
+
     def _init_header(self):
         if self.method == 'POST':
             content_type = 'application/x-www-form-urlencoded; charset=UTF-8'
@@ -196,7 +202,7 @@ class Spider(object):
         return webdriver.Chrome(options=options)
 
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
-                args=None, priority=None, use_session=None, **kwargs):
+                args=None, kwarg=None, priority=None, use_session=None, **kwargs):
 
         if use_session is None: use_session = self.use_session
 
@@ -220,6 +226,7 @@ class Spider(object):
             'callback': callback or self.parse,
             'downloader': self.downloader,
             'args': args,
+            'kwarg': kwarg,
             'session': self.session if use_session else None,
             'show_detail': self.show_request_detail,
             **self.request_setting,
@@ -228,7 +235,7 @@ class Spider(object):
         return Request(**request_kwargs)
 
     def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
-                     priority=None, use_session=False, **kwargs):
+                     kwarg=None, priority=None, use_session=False, **kwargs):
 
         return self.request(
             self,
@@ -240,6 +247,7 @@ class Spider(object):
             cookies=cookies,
             callback=callback,
             args=args,
+            kwarg=kwarg,
             priority=priority,
             use_session=use_session,
             **kwargs
@@ -286,5 +294,5 @@ class Spider(object):
         pass
 
     def end(self):
-        cost_time = human_time(time.time() - self.start_time)
+        cost_time = human_time(time.time() - self.start_time - self.downloader.close_countdown)
         print('Time: {} day {} hour {} minute {:.3f} second'.format(*cost_time))

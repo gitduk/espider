@@ -4,7 +4,7 @@ import threading
 from queue import Queue
 import urllib3
 from copy import deepcopy
-from espider.default_settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
+from espider.default_fields import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
 import espider.utils.requests as requests
@@ -22,7 +22,7 @@ class Request(threading.Thread):
         'daemon'
     ]
 
-    def __init__(self, url, method='', args=None, **kwargs):
+    def __init__(self, url, method='', args=None, kwarg=None, **kwargs):
         super().__init__()
         threading.Thread.__init__(self, name=kwargs.get('name'), daemon=kwargs.get('daemon'))
 
@@ -53,7 +53,8 @@ class Request(threading.Thread):
         self.pocket = {}
 
         if args and not isinstance(args, tuple): args = (args,)
-        self.func_args, self.func_kwargs = args_split(deepcopy(args) or ())
+        self.func_args = args or ()
+        self.func_kwargs = kwarg or {}
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
         # 加载 BaseMiddleware
@@ -179,9 +180,9 @@ class Request(threading.Thread):
 
 
 class Downloader(object):
-    __settings__ = ['wait_time', 'max_thread']
+    __settings__ = ['wait_time', 'max_thread', 'close_countdown', 'distribute_time']
 
-    def __init__(self, max_thread=None, wait_time=0, end_callback=None):
+    def __init__(self, max_thread=None, wait_time=0, end_callback=None, **kwargs):
         self.thread_pool = PriorityQueue()
         self.item_pool = Queue()
         self.end_callback = end_callback
@@ -190,8 +191,8 @@ class Downloader(object):
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0, 'Error': 0}
         self.wait_time = wait_time
         self.item_filter = []
-        self.close_countdown = 10
-        self.distribute_item = True
+        self.close_countdown = kwargs.get('close_countdown') or 10
+        self.distribute_item = kwargs.get('distribute_item') or True
         self._close = False
         assert isinstance(self.item_filter, Iterable), 'item_filter must be a iterable object'
 

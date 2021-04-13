@@ -7,15 +7,7 @@ DEFAULT_METHOD_VALUE = [
     "PATCH",
     "DELETE"
 ]
-DEFAULT_METHOD_VALUE = [
-    'GET',
-    'POST',
-    'HEAD',
-    'OPTIONS',
-    'PUT',
-    'PATCH',
-    'DELETE'
-]
+
 USER_AGENT_LIST = [
     "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 OPR/26.0.1656.60",
     "Opera/8.0 (Windows NT 5.1; U; en)",
