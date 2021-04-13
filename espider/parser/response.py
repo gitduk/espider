@@ -31,10 +31,8 @@ class Response(res):
 
         self.cost_time = 0
         self.retry_times = 0
-        self.request_kwargs = {}
 
         self._encoding = None
-
         self.encoding_errors = "strict"  # strict / replace / ignore
 
     @classmethod

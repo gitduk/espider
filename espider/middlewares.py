@@ -71,7 +71,7 @@ class RequestFilter(BaseMiddleware):
         if not code:
             print('<RequestFilter> Drop: {}'.format(kwargs))
             self.number += 1
-            return None
+            return 'drop'
         else:
             return request
 

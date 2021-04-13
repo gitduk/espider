@@ -3,7 +3,6 @@ from collections.abc import Generator, Iterable
 import threading
 from queue import Queue
 import urllib3
-from copy import deepcopy
 from espider.default_fields import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
@@ -44,7 +43,7 @@ class Request(threading.Thread):
         self.callback = kwargs.get('callback')
         self.session = kwargs.get('session')
         self.show_detail = kwargs.get('show_detail')
-        self.retry_count = 0
+        self.retry_times = 0
         self.is_start = False
         self.success = False
         self.error = False
@@ -72,6 +71,7 @@ class Request(threading.Thread):
 
         # 加载中间件
         request = _load_download_middleware(request=self, middlewares=self.downloader.middlewares)
+        if request == 'DROP': return
         if request: self.__dict__.update(request.__dict__)
 
         start = time.time()
@@ -104,9 +104,9 @@ class Request(threading.Thread):
             self._process_result(result, start)
 
         else:
-            if response.status_code != 200 and self.retry_count < self.max_retry:
-                self.retry_count += 1
-                time.sleep(self.retry_count * 0.1)
+            if response.status_code != 200 and self.retry_times < self.max_retry:
+                self.retry_times += 1
+                time.sleep(self.retry_times * 0.1)
 
                 # 重新请求
                 result = _load_retry_middleware(self, response, middlewares=self.downloader.middlewares)
@@ -126,8 +126,7 @@ class Request(threading.Thread):
         if response.status_code == 200: self.success = True
 
         response.cost_time = '{:.3f}'.format(time.time() - start)
-        response.retry_times = self.retry_count
-        response.request_kwargs = self.request_kwargs
+        response.retry_times = self.retry_times
 
         # 加载中间件
         response_ = _load_download_middleware(
@@ -327,7 +326,7 @@ class Downloader(object):
     def _start_request(self, request):
 
         if request:
-            time.sleep(self.wait_time + request.retry_count * 0.1)
+            time.sleep(self.wait_time + request.retry_times * 0.1)
             if not request.is_start: request.start()
             self.running_thread.put(request)
 
@@ -337,7 +336,7 @@ class Downloader(object):
             request.join()
             if request.success:
                 self.count['Success'] += 1
-                self.count['Retry'] += request.retry_count
+                self.count['Retry'] += request.retry_times
             elif request.error:
                 self.count['Error'] += 1
             else:
@@ -365,6 +364,7 @@ def _load_download_middleware(request=None, response=None, middlewares=None, arg
             # 全局处理函数，每一个请求和响应都要经过
             if hasattr(middleware, 'process_request'):
                 result = middleware.process_request(request, *request.func_args, **request.func_kwargs)
+                if isinstance(result, str) and result.upper() == 'DROP': return result.upper()
                 if result: request = result
 
         return request

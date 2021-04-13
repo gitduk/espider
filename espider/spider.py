@@ -293,6 +293,9 @@ class Spider(object):
     def parse(self, response, *args, **kwargs):
         pass
 
+    def close(self):
+        self.downloader._close = True
+
     def end(self):
         cost_time = human_time(time.time() - self.start_time - self.downloader.close_countdown)
         print('Time: {} day {} hour {} minute {:.3f} second'.format(*cost_time))

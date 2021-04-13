@@ -54,6 +54,13 @@ if not VERSION:
 else:
     about['__version__'] = VERSION
 
+try:
+    path = os.path.join(here, 'dist')
+    print('\033[1m{0}\033[0m'.format(f'Removing previous builds [{path}] …'))
+    rmtree(path)
+except OSError as e:
+    pass
+
 
 class UploadCommand(Command):
     """Support setup.py upload."""
@@ -73,12 +80,6 @@ class UploadCommand(Command):
         pass
 
     def run(self):
-        try:
-            self.status('Removing previous builds…')
-            rmtree(os.path.join(here, 'dist'))
-        except OSError:
-            pass
-
         self.status('Building Source and Wheel (universal) distribution…')
         os.system('{0} setup.py sdist bdist_wheel --universal'.format(sys.executable))
 
