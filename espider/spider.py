@@ -100,6 +100,8 @@ class Spider(object):
         # log
         self.show_request_detail = False
 
+        self.max_priority = 1
+
     def load_setting(self, setting):
         assert isinstance(setting, Setting)
         self.downloader_setting = {k: v for k, v in setting.items() if k in Downloader.__settings__}
@@ -212,7 +214,11 @@ class Spider(object):
             if pre_func_name not in self._request_priority_map.keys():
                 self._request_priority_map[pre_func_name] = self._priority_index
                 self._priority_index += 1
+                if self._priority_index > self.max_priority: self.max_priority = self._priority_index
+
             priority = self._request_priority_map.get(pre_func_name)
+        else:
+            if priority > self.max_priority: self.max_priority = priority
 
         request_kwargs = {
             **self.request_kwargs,
@@ -287,8 +293,6 @@ class Spider(object):
                     print(f'Warning ... start_requests yield {request}, not a Request object')
         elif isinstance(result, Request):
             self.downloader.push(result)
-        else:
-            print(f'Warning ... start_requests return {result}, not a Request object')
 
     def parse(self, response, *args, **kwargs):
         pass
