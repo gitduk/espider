@@ -12,6 +12,7 @@ from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
     dict_to_json, update, search, delete, strip, replace, random_list, human_time
 from selenium import webdriver
+from espider.middlewares import RequestFilter
 
 
 class Spider(object):
@@ -91,14 +92,16 @@ class Spider(object):
         self.start_time = time.time()
 
         # 请求优先级
-        self._next_priority_index = 2
-        self._default_priority_map = {
-            'start_requests': 0,
-            'parse': 1
-        }
+        self._next_priority_index = 0
+        self._callback_priority_map = {}
 
         # log
         self.show_request_detail = False
+
+    def load_request_filter(self, host='localhost', port=6379, set_key=None, timeout=None, priority=None, **kwargs):
+        self.downloader.add_middleware(RequestFilter(
+            host=host, port=port, set_key=set_key, timeout=timeout, priority=priority, **kwargs
+        ))
 
     def load_setting(self, setting):
         assert isinstance(setting, Setting)
@@ -205,14 +208,14 @@ class Spider(object):
                 args=None, kwarg=None, priority=None, use_session=None, **kwargs):
 
         if use_session is None: use_session = self.use_session
+        if not callback: callback = self.parse
 
         # 注册函数
-        pre_func_name = traceback.extract_stack()[-2].name
-        if pre_func_name not in self._default_priority_map.keys():
-            self._default_priority_map[pre_func_name] = self._next_priority_index
+        if callback.__name__ not in self._callback_priority_map.keys():
+            self._callback_priority_map[callback.__name__] = self._next_priority_index
             self._next_priority_index += 1
 
-        if not priority: priority = self._default_priority_map.get(pre_func_name)
+        if not priority: priority = self._callback_priority_map.get(callback.__name__)
 
         request_kwargs = {
             **self.request_kwargs,
@@ -223,7 +226,7 @@ class Spider(object):
             'headers': headers or self.headers,
             'cookies': cookies,
             'priority': priority,
-            'callback': callback or self.parse,
+            'callback': callback,
             'downloader': self.downloader,
             'args': args,
             'kwarg': kwarg,
