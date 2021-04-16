@@ -14,7 +14,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class Request(threading.Thread):
     __settings__ = [
-        'max_retry'
+        'max_retry',
+        'timeout'
     ]
     __DEFAULT_THREAD_VALUE__ = [
         'name',

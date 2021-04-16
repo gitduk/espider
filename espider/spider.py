@@ -91,16 +91,14 @@ class Spider(object):
         self.start_time = time.time()
 
         # 请求优先级
-        self._priority_index = 2
-        self._request_priority_map = {
+        self._next_priority_index = 2
+        self._default_priority_map = {
             'start_requests': 0,
             'parse': 1
         }
 
         # log
         self.show_request_detail = False
-
-        self.max_priority = 1
 
     def load_setting(self, setting):
         assert isinstance(setting, Setting)
@@ -208,17 +206,13 @@ class Spider(object):
 
         if use_session is None: use_session = self.use_session
 
-        # 请求优先级自增
-        if not priority:
-            pre_func_name = traceback.extract_stack()[-2].name
-            if pre_func_name not in self._request_priority_map.keys():
-                self._request_priority_map[pre_func_name] = self._priority_index
-                self._priority_index += 1
-                if self._priority_index > self.max_priority: self.max_priority = self._priority_index
+        # 注册函数
+        pre_func_name = traceback.extract_stack()[-2].name
+        if pre_func_name not in self._default_priority_map.keys():
+            self._default_priority_map[pre_func_name] = self._next_priority_index
+            self._next_priority_index += 1
 
-            priority = self._request_priority_map.get(pre_func_name)
-        else:
-            if priority > self.max_priority: self.max_priority = priority
+        if not priority: priority = self._default_priority_map.get(pre_func_name)
 
         request_kwargs = {
             **self.request_kwargs,

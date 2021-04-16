@@ -406,7 +406,6 @@ class Response(res):
         return self._query_from_map(self.match, map, **kwargs)
 
     def open(self, path=None):
-        if os.path.exists(path): os.system('rm {}'.format(path))
         self.save_html(path)
         webbrowser.open(path or 'index.html')
 
@@ -414,10 +413,12 @@ class Response(res):
         with open(path or 'index.html', 'w', encoding=self.encoding, errors='replace') as html:
             self.encoding_errors = 'replace'
             html.write(self.text)
+            html.flush()
 
     def save_content(self, path):
         with open(path, 'wb') as html:
             html.write(self.content)
+            html.flush()
 
     def __del__(self):
         self.close()
