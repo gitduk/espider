@@ -1,4 +1,5 @@
 import datetime
+import os
 import re as _re
 from urllib.parse import urlparse, urlunparse, urljoin
 from espider.utils.tools import search
@@ -405,6 +406,7 @@ class Response(res):
         return self._query_from_map(self.match, map, **kwargs)
 
     def open(self, path=None):
+        if os.path.exists(path): os.system('rm {}'.format(path))
         self.save_html(path)
         webbrowser.open(path or 'index.html')
 
