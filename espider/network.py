@@ -191,7 +191,7 @@ class Downloader(object):
         self.count = {'Success': 0, 'Retry': 0, 'Failed': 0, 'Error': 0}
         self.wait_time = wait_time
         self.item_filter = []
-        self.close_countdown = kwargs.get('close_countdown') or 10
+        self.close_countdown = kwargs.get('close_countdown') or 3
         self.distribute_item = kwargs.get('distribute_item') or True
         self._close = False
         assert isinstance(self.item_filter, Iterable), 'item_filter must be a iterable object'
@@ -201,6 +201,9 @@ class Downloader(object):
 
         # 数据管道
         self._pipelines = []
+
+        # debug
+        self._debug = False
 
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
@@ -271,7 +274,7 @@ class Downloader(object):
                             print('Wait task ...'.format(countdown + 1))
                         time.sleep(1)
                         countdown -= 1
-                    else:
+                    elif not self._debug:
                         # 关闭管道
                         for pipeline in self._pipelines:
                             if hasattr(pipeline, 'close_pipeline'): pipeline.close_pipeline()

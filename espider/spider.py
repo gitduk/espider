@@ -22,7 +22,7 @@ class Spider(object):
 
     __custom_setting__ = {
         'max_thread': 10,
-        'max_retry': 3
+        'max_retry': 0
     }
 
     def __init__(
@@ -97,6 +97,14 @@ class Spider(object):
 
         # log
         self.show_request_detail = False
+
+    @property
+    def debug(self):
+        return self.downloader._debug
+
+    @debug.setter
+    def debug(self, value):
+        self.downloader._debug = value
 
     def load_request_filter(self, host='localhost', port=6379, set_key=None, timeout=None, priority=None, **kwargs):
         self.downloader.add_middleware(RequestFilter(

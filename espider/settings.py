@@ -6,9 +6,9 @@ from espider.network import Downloader, Request
 class DefaultSetting(object):
     def __init__(self):
         self.max_thread = 10
-        self.max_retry = 3
+        self.max_retry = 0
         self.wait_time = 0
-        self.close_countdown = 10
+        self.close_countdown = 3
         self.distribute_item = True
 
 
