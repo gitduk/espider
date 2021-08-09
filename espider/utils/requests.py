@@ -52,7 +52,7 @@ class Session(BaseSession):
         send_kwargs.update(settings)
         resp = self.send(prep, **send_kwargs)
 
-        return Response(resp)
+        return resp
 
     def get(self, url, **kwargs):
         kwargs.setdefault('allow_redirects', True)
@@ -102,7 +102,7 @@ def request(method, url, **kwargs):
     if isinstance(kwargs.get('headers'), str): kwargs['headers'] = headers_to_dict(kwargs.get('headers'))
     if isinstance(kwargs.get('cookies'), str): kwargs['cookies'] = cookies_to_dict(kwargs.get('cookies'))
     with Session() as session:
-        return session.request(method=method, url=url, **kwargs)
+        return Response(session.request(method=method, url=url, **kwargs))
 
 
 def get(url, params=None, **kwargs):

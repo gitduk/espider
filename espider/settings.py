@@ -12,7 +12,7 @@ class DefaultSetting(object):
         self.distribute_item = True
 
 
-class Setting(DefaultSetting):
+class Settings(DefaultSetting):
     __settings__ = [
         *Downloader.__settings__,
         *Request.__settings__

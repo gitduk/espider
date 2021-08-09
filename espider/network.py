@@ -3,11 +3,12 @@ from collections.abc import Generator, Iterable
 import threading
 from queue import Queue
 import urllib3
-from espider.default_fields import REQUEST_KEYS, DEFAULT_METHOD_VALUE
+from espider.default import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
 import espider.utils.requests as requests
 from espider.middlewares import BaseMiddleware
+from espider.pipelines import BasePipeline
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -22,7 +23,7 @@ class Request(threading.Thread):
         'daemon'
     ]
 
-    def __init__(self, url, method='', args=None, kwarg=None, **kwargs):
+    def __init__(self, url, method='', **kwargs):
         super().__init__()
         threading.Thread.__init__(self, name=kwargs.get('name'), daemon=kwargs.get('daemon'))
 
@@ -52,9 +53,12 @@ class Request(threading.Thread):
         # 额外参数
         self.pocket = {}
 
-        if args and not isinstance(args, tuple): args = (args,)
-        self.func_args = args or ()
-        self.func_kwargs = kwarg or {}
+        cb_args = kwargs.get('cb_args')
+
+        if isinstance(cb_args, list): cb_args = tuple(cb_args)
+        if cb_args and not isinstance(cb_args, tuple): cb_args = (cb_args,)
+        self.func_args = cb_args or ()
+        self.func_kwargs = kwargs.get('cb_kwargs') or {}
         self.request_kwargs = {'url': self.url, 'method': self.method, **self.request_kwargs}
 
         # 加载 BaseMiddleware
@@ -151,7 +155,7 @@ class Request(threading.Thread):
 
             if result:
                 if isinstance(result, Generator):
-                    e_msg = 'Invalid yield value: {}, {} must yield a Request or a dict object'
+                    e_msg = 'Invalid yield value: "{}", function {} must yield a Request or a dict object'
                     for _ in result:
                         if isinstance(_, Request):
                             self.downloader.push(_)
@@ -176,7 +180,7 @@ class Request(threading.Thread):
                     ))
 
     def __repr__(self):
-        return f'<{self.name} {self.__class__.__name__}> {self.method}:{self.url}, priority:{self.priority}'
+        return f'<{self.name} {self.__class__.__name__} {self.method}:{self.url} priority:{self.priority}>'
 
 
 class Downloader(object):
@@ -241,6 +245,8 @@ class Downloader(object):
 
     def add_pipeline(self, pipeline, index=0):
         if type(pipeline).__name__ == 'type': pipeline = pipeline()
+
+        if hasattr(pipeline, 'open_pipeline'): pipeline.open_pipeline()
 
         if not hasattr(pipeline, 'process_item'):
             raise AttributeError('Pipeline Object must have process_item method')
@@ -323,6 +329,7 @@ class Downloader(object):
                 print(e)
 
     def _send_data(self, data, *args, **kwargs):
+        if not self._pipelines: self.add_pipeline(BasePipeline)
         for _pipeline in self._pipelines:
             result = _pipeline.get('pipeline').process_item(data, *args, **kwargs)
             if result: data = result

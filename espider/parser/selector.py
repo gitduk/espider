@@ -1,76 +1,121 @@
-# -*- coding: utf-8 -*-
 """
-Created on 2018-10-08 15:33:37
----------
-@summary: 重新定义 selector
----------
-@author: Boris
-@email:  boris_liu@foxmail.com
+XPath selectors based on lxml
 """
-import re
+
+import sys
 
 import six
-from lxml import etree
-from parsel import Selector as ParselSelector
-from parsel import SelectorList as ParselSelectorList
-from w3lib.html import replace_entities as w3lib_replace_entities
+from lxml import etree, html
+
+from parsel.utils import flatten, iflatten, extract_regex, shorten
+from parsel.csstranslator import HTMLTranslator, GenericTranslator
+
+from espider.utils.tools import search
 
 
-def extract_regex(regex, text, replace_entities=True, flags=0):
-    """Extract a list of unicode strings from the given text/encoding using the following policies:
-    * if the regex contains a named group called "extract" that will be returned
-    * if the regex contains multiple numbered groups, all those will be returned (flattened)
-    * if the regex doesn't contain any group the entire regex matching is returned
-    """
-    if isinstance(regex, six.string_types):
-        regex = re.compile(regex, flags=flags)
+class CannotRemoveElementWithoutRoot(Exception):
+    pass
 
-    if "extract" in regex.groupindex:
-        # named group
-        try:
-            extracted = regex.search(text).group("extract")
-        except AttributeError:
-            strings = []
-        else:
-            strings = [extracted] if extracted is not None else []
+
+class CannotRemoveElementWithoutParent(Exception):
+    pass
+
+
+class SafeXMLParser(etree.XMLParser):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('resolve_entities', False)
+        super(SafeXMLParser, self).__init__(*args, **kwargs)
+
+
+_ctgroup = {
+    'html': {'_parser': html.HTMLParser,
+             '_csstranslator': HTMLTranslator(),
+             '_tostring_method': 'html'},
+    'xml': {'_parser': SafeXMLParser,
+            '_csstranslator': GenericTranslator(),
+            '_tostring_method': 'xml'},
+}
+
+
+def _st(st):
+    if st is None:
+        return 'html'
+    elif st in _ctgroup:
+        return st
     else:
-        # full regex or numbered groups
-        strings = regex.findall(text)
-
-    # strings = flatten(strings) # 这东西会把多维列表铺平
-    if not replace_entities:
-        return strings
-
-    values = []
-    for value in strings:
-        if isinstance(value, (list, tuple)):  # w3lib_replace_entities 不能接收list tuple
-            values.append(
-                [w3lib_replace_entities(v, keep=["lt", "amp"]) for v in value]
-            )
-        else:
-            values.append(w3lib_replace_entities(value, keep=["lt", "amp"]))
-
-    return values
+        raise ValueError('Invalid type: %s' % st)
 
 
 def create_root_node(text, parser_cls, base_url=None):
     """Create root node for text using given parser class.
     """
-    body = text.strip().replace("\x00", "").encode("utf8") or b"<html/>"
-    parser = parser_cls(recover=True, encoding="utf8", huge_tree=True)
+    body = text.strip().replace('\x00', '').encode('utf8') or b'<html/>'
+    parser = parser_cls(recover=True, encoding='utf8')
     root = etree.fromstring(body, parser=parser, base_url=base_url)
     if root is None:
-        root = etree.fromstring(b"<html/>", parser=parser, base_url=base_url)
+        root = etree.fromstring(b'<html/>', parser=parser, base_url=base_url)
     return root
 
 
-class SelectorList(ParselSelectorList):
+class SelectorList(list):
     """
     The :class:`SelectorList` class is a subclass of the builtin ``list``
     class, which provides a few additional methods.
     """
 
-    def re_first(self, regex, default=None, replace_entities=True, flags=re.S):
+    # __getslice__ is deprecated but `list` builtin implements it only in Py2
+    def __getslice__(self, i, j):
+        o = super(SelectorList, self).__getslice__(i, j)
+        return self.__class__(o)
+
+    def __getitem__(self, pos):
+        o = super(SelectorList, self).__getitem__(pos)
+        return self.__class__(o) if isinstance(pos, slice) else o
+
+    def __getstate__(self):
+        raise TypeError("can't pickle SelectorList objects")
+
+    def xpath(self, xpath, namespaces=None, **kwargs):
+        """
+        Call the ``.xpath()`` method for each element in this list and return
+        their results flattened as another :class:`SelectorList`.
+
+        ``query`` is the same argument as the one in :meth:`Selector.xpath`
+
+        ``namespaces`` is an optional ``prefix: namespace-uri`` mapping (dict)
+        for additional prefixes to those registered with ``register_namespace(prefix, uri)``.
+        Contrary to ``register_namespace()``, these prefixes are not
+        saved for future calls.
+
+        Any additional named arguments can be used to pass values for XPath
+        variables in the XPath expression, e.g.::
+
+            selector.xpath('//a[href=$url]', url="http://www.example.com")
+        """
+        return self.__class__(flatten([x.xpath(xpath, namespaces=namespaces, **kwargs) for x in self]))
+
+    def css(self, query):
+        """
+        Call the ``.css()`` method for each element in this list and return
+        their results flattened as another :class:`SelectorList`.
+
+        ``query`` is the same argument as the one in :meth:`Selector.css`
+        """
+        return self.__class__(flatten([x.css(query) for x in self]))
+
+    def re(self, regex, replace_entities=True):
+        """
+        Call the ``.re()`` method for each element in this list and return
+        their results flattened, as a list of unicode strings.
+
+        By default, character entity references are replaced by their
+        corresponding character (except for ``&amp;`` and ``&lt;``.
+        Passing ``replace_entities`` as ``False`` switches off these
+        replacements.
+        """
+        return flatten([x.re(regex, replace_entities=replace_entities) for x in self])
+
+    def re_first(self, regex, default=None, replace_entities=True):
         """
         Call the ``.re()`` method for the first element in this list and
         return the result in an unicode string. If the list is empty or the
@@ -82,58 +127,180 @@ class SelectorList(ParselSelectorList):
         Passing ``replace_entities`` as ``False`` switches off these
         replacements.
         """
+        for el in iflatten(x.re(regex, replace_entities=replace_entities) for x in self):
+            return el
+        return default
 
-        datas = self.re(regex, replace_entities=replace_entities, flags=flags)
-        return datas[0] if datas else default
-
-    def re(self, regex, replace_entities=True, flags=re.S):
+    def getall(self):
         """
-        Call the ``.re()`` method for each element in this list and return
+        Call the ``.get()`` method for each element is this list and return
         their results flattened, as a list of unicode strings.
-
-        By default, character entity references are replaced by their
-        corresponding character (except for ``&amp;`` and ``&lt;``.
-        Passing ``replace_entities`` as ``False`` switches off these
-        replacements.
         """
-        datas = [
-            x.re(regex, replace_entities=replace_entities, flags=flags) for x in self
-        ]
-        return datas[0] if len(datas) == 1 else datas
+        return [x.get() for x in self]
+
+    extract = getall
+
+    def get(self, default=None):
+        """
+        Return the result of ``.get()`` for the first element in this list.
+        If the list is empty, return the default value.
+        """
+        for x in self:
+            return x.get()
+        return default
+
+    extract_first = get
+
+    @property
+    def attrib(self):
+        """Return the attributes dictionary for the first element.
+        If the list is empty, return an empty dict.
+        """
+        for x in self:
+            return x.attrib
+        return {}
+
+    def remove(self):
+        """
+        Remove matched nodes from the parent for each element in this list.
+        """
+        for x in self:
+            x.remove()
 
 
-class Selector(ParselSelector):
+class Selector(object):
+    """
+    :class:`Selector` allows you to select parts of an XML or HTML text using CSS
+    or XPath expressions and extract data from it.
+
+    ``text`` is a ``unicode`` object in Python 2 or a ``str`` object in Python 3
+
+    ``type`` defines the selector type, it can be ``"html"``, ``"xml"`` or ``None`` (default).
+    If ``type`` is ``None``, the selector defaults to ``"html"``.
+
+    ``base_url`` allows setting a URL for the document. This is needed when looking up external entities with relative paths.
+    See [`lxml` documentation](https://lxml.de/api/index.html) ``lxml.etree.fromstring`` for more information.
+    """
+
+    __slots__ = ['text', 'namespaces', 'type', '_expr', 'root',
+                 '__weakref__', '_parser', '_csstranslator', '_tostring_method']
+
+    _default_type = None
+    _default_namespaces = {
+        "re": "http://exslt.org/regular-expressions",
+
+        # supported in libxslt:
+        # set:difference
+        # set:has-same-node
+        # set:intersection
+        # set:leading
+        # set:trailing
+        "set": "http://exslt.org/sets"
+    }
+    _lxml_smart_strings = False
     selectorlist_cls = SelectorList
 
-    def __str__(self):
-        data = repr(self.get())
-        return "<%s xpath=%r data=%s>" % (type(self).__name__, self._expr, data)
+    def __init__(self, text=None, type=None, namespaces=None, root=None,
+                 base_url=None, _expr=None):
+        self.type = st = _st(type or self._default_type)
+        self._parser = _ctgroup[st]['_parser']
+        self._csstranslator = _ctgroup[st]['_csstranslator']
+        self._tostring_method = _ctgroup[st]['_tostring_method']
 
-    __repr__ = __str__
+        if text is not None:
+            if not isinstance(text, six.text_type):
+                msg = "text argument should be of type %s, got %s" % (
+                    six.text_type, text.__class__)
+                raise TypeError(msg)
+            root = self._get_root(text, base_url)
+        elif root is None:
+            raise ValueError("Selector needs either text or root argument")
 
-    def __init__(self, text=None, *args, **kwargs):
-        # 先将&nbsp; 转为空格，否则selector 会转为 \xa0
-        if text:
-            text = re.sub("&nbsp;", "\x20", text)
-        super(Selector, self).__init__(text, *args, **kwargs)
+        self.namespaces = dict(self._default_namespaces)
+        if namespaces is not None:
+            self.namespaces.update(namespaces)
+        self.root = root
+        self._expr = _expr
 
-    def re_first(self, regex, default=None, replace_entities=True, flags=re.S):
+    def __getstate__(self):
+        raise TypeError("can't pickle Selector objects")
+
+    def _get_root(self, text, base_url=None):
+        return create_root_node(text, self._parser, base_url=base_url)
+
+    def find(self, key, data=None, target_type=None):
+        return search(key=key, data=data or self.get(), target_type=target_type)
+
+    def find_map(self, map, data=None, target_type=None, **kwargs):
+        return self._query_from_map(self.find, map, data=data, target_type=target_type, **kwargs)
+
+    def xpath(self, query, namespaces=None, **kwargs):
         """
-        Apply the given regex and return the first unicode string which
-        matches. If there is no match, return the default value (``None`` if
-        the argument is not provided).
+        Find nodes matching the xpath ``query`` and return the result as a
+        :class:`SelectorList` instance with all elements flattened. List
+        elements implement :class:`Selector` interface too.
 
-        By default, character entity references are replaced by their
-        corresponding character (except for ``&amp;`` and ``&lt;``.
-        Passing ``replace_entities`` as ``False`` switches off these
-        replacements.
+        ``query`` is a string containing the XPATH query to apply.
+
+        ``namespaces`` is an optional ``prefix: namespace-uri`` mapping (dict)
+        for additional prefixes to those registered with ``register_namespace(prefix, uri)``.
+        Contrary to ``register_namespace()``, these prefixes are not
+        saved for future calls.
+
+        Any additional named arguments can be used to pass values for XPath
+        variables in the XPath expression, e.g.::
+
+            selector.xpath('//a[href=$url]', url="http://www.example.com")
         """
+        try:
+            xpathev = self.root.xpath
+        except AttributeError:
+            return self.selectorlist_cls([])
 
-        datas = self.re(regex, replace_entities=replace_entities, flags=flags)
+        nsp = dict(self.namespaces)
+        if namespaces is not None:
+            nsp.update(namespaces)
+        try:
+            result = xpathev(query, namespaces=nsp,
+                             smart_strings=self._lxml_smart_strings,
+                             **kwargs)
+        except etree.XPathError as exc:
+            msg = u"XPath error: %s in %s" % (exc, query)
+            msg = msg if six.PY3 else msg.encode('unicode_escape')
+            six.reraise(ValueError, ValueError(msg), sys.exc_info()[2])
 
-        return datas[0] if datas else default
+        if type(result) is not list:
+            result = [result]
 
-    def re(self, regex, replace_entities=True, flags=re.S):
+        result = [self.__class__(root=x, _expr=query,
+                                 namespaces=self.namespaces,
+                                 type=self.type)
+                  for x in result]
+        return self.selectorlist_cls(result)
+
+    def xpath_map(self, query_map, namespaces=None, **kwargs):
+        return self._query_from_map(self.xpath, query_map, namespaces=namespaces, **kwargs)
+
+    def css(self, query):
+        """
+        Apply the given CSS selector and return a :class:`SelectorList` instance.
+
+        ``query`` is a string containing the CSS selector to apply.
+
+        In the background, CSS queries are translated into XPath queries using
+        `cssselect`_ library and run ``.xpath()`` method.
+
+        .. _cssselect: https://pypi.python.org/pypi/cssselect/
+        """
+        return self.xpath(self._css2xpath(query))
+
+    def css_map(self, query_map):
+        return self._query_from_map(self.css, query_map)
+
+    def _css2xpath(self, query):
+        return self._csstranslator.css_to_xpath(query)
+
+    def re(self, regex, replace_entities=True):
         """
         Apply the given regex and return a list of unicode strings with the
         matches.
@@ -142,14 +309,162 @@ class Selector(ParselSelector):
         will be compiled to a regular expression using ``re.compile(regex)``.
 
         By default, character entity references are replaced by their
-        corresponding character (except for ``&amp;`` and ``&lt;``.
+        corresponding character (except for ``&amp;`` and ``&lt;``).
         Passing ``replace_entities`` as ``False`` switches off these
         replacements.
         """
+        return extract_regex(regex, self.get(), replace_entities=replace_entities)
 
-        return extract_regex(
-            regex, self.get(), replace_entities=replace_entities, flags=flags
-        )
+    def re_map(self, regex_map, replace_entities=True):
+        return self._query_from_map(self.re, regex_map, replace_entities=replace_entities)
 
-    def _get_root(self, text, base_url=None):
-        return create_root_node(text, self._parser, base_url=base_url)
+    def re_first(self, regex, default=None, replace_entities=True):
+        """
+        Apply the given regex and return the first unicode string which
+        matches. If there is no match, return the default value (``None`` if
+        the argument is not provided).
+
+        By default, character entity references are replaced by their
+        corresponding character (except for ``&amp;`` and ``&lt;``).
+        Passing ``replace_entities`` as ``False`` switches off these
+        replacements.
+        """
+        return next(iflatten(self.re(regex, replace_entities=replace_entities)), default)
+
+    def re_first_map(self, regex_map, default=None, replace_entities=True):
+        return self._query_from_map(self.re_first, regex_map, default=default, replace_entities=replace_entities)
+
+    def query_from_map(self, map: dict, **kwargs):
+        data = {}
+        for key, value in map.items():
+            if isinstance(value, str):
+                try:
+                    data[key] = self.re(value, **kwargs)
+                except:
+                    try:
+                        data[key] = self.css(value)
+                    except:
+                        data[key] = self.xpath(value, **kwargs)
+
+            elif isinstance(value, dict):
+                data[key] = self.query_from_map(value, **kwargs)
+            else:
+                print(f'Warning ... query not support {type(value)}')
+        return data
+
+    def _query_from_map(self, func, map: dict, first=False, **kwargs):
+        data = {}
+        data_list = []
+        for key, value in map.items():
+            if isinstance(value, str):
+                r = func(value, **kwargs)
+                data[key] = r.extract_first() if first else [d for d in r.extract() if d.strip()]
+            elif isinstance(value, dict):
+                data[key] = self._query_from_map(func, value, first=first, **kwargs)
+            else:
+                print(f'Warning ... query not support {type(value)}')
+
+        if not first:
+            key = list(data.keys())[0]
+            for i in range(len(data.get(key))):
+                _ = {}
+                for k, v in data.items():
+                    _[k] = v[i]
+                data_list.append(_)
+
+        return data if first else data_list
+
+    def get(self):
+        """
+        Serialize and return the matched nodes in a single unicode string.
+        Percent encoded content is unquoted.
+        """
+        try:
+            return etree.tostring(self.root,
+                                  method=self._tostring_method,
+                                  encoding='unicode',
+                                  with_tail=False)
+        except (AttributeError, TypeError):
+            if self.root is True:
+                return u'1'
+            elif self.root is False:
+                return u'0'
+            else:
+                return six.text_type(self.root)
+
+    extract = get
+
+    def getall(self):
+        """
+        Serialize and return the matched node in a 1-element list of unicode strings.
+        """
+        return [self.get()]
+
+    def register_namespace(self, prefix, uri):
+        """
+        Register the given namespace to be used in this :class:`Selector`.
+        Without registering namespaces you can't select or extract data from
+        non-standard namespaces. See :ref:`selector-examples-xml`.
+        """
+        self.namespaces[prefix] = uri
+
+    def remove_namespaces(self):
+        """
+        Remove all namespaces, allowing to traverse the document using
+        namespace-less xpaths. See :ref:`removing-namespaces`.
+        """
+        for el in self.root.iter('*'):
+            if el.tag.startswith('{'):
+                el.tag = el.tag.split('}', 1)[1]
+            # loop on element attributes also
+            for an in el.attrib.keys():
+                if an.startswith('{'):
+                    el.attrib[an.split('}', 1)[1]] = el.attrib.pop(an)
+        # remove namespace declarations
+        etree.cleanup_namespaces(self.root)
+
+    def remove(self):
+        """
+        Remove matched nodes from the parent element.
+        """
+        try:
+            parent = self.root.getparent()
+        except AttributeError:
+            # 'str' object has no attribute 'getparent'
+            raise CannotRemoveElementWithoutRoot(
+                "The node you're trying to remove has no root, "
+                "are you trying to remove a pseudo-element? "
+                "Try to use 'li' as a selector instead of 'li::text' or "
+                "'//li' instead of '//li/text()', for example."
+            )
+
+        try:
+            parent.remove(self.root)
+        except AttributeError:
+            # 'NoneType' object has no attribute 'remove'
+            raise CannotRemoveElementWithoutParent(
+                "The node you're trying to remove has no parent, "
+                "are you trying to remove a root element?"
+            )
+
+    @property
+    def attrib(self):
+        """Return the attributes dictionary for underlying element.
+        """
+        return dict(self.root.attrib)
+
+    def __bool__(self):
+        """
+        Return ``True`` if there is any real content selected or ``False``
+        otherwise.  In other words, the boolean value of a :class:`Selector` is
+        given by the contents it selects.
+        """
+        return bool(self.get())
+
+    __nonzero__ = __bool__
+
+    def __str__(self):
+        data = repr(shorten(self.get(), width=40))
+        return "<%s xpath=%r data=%s>" % (type(self).__name__, self._expr, data)
+
+    __repr__ = __str__

@@ -1,17 +1,15 @@
 import threading
 import time
-import traceback
 from collections.abc import Generator
-from espider.default_fields import *
+from espider.default import *
 from espider.network import Request, Downloader
 import random
 from requests.cookies import cookiejar_from_dict, merge_cookies
 from espider.parser.response import Response
-from espider.settings import Setting
+from espider.settings import Settings
 from espider.utils import requests
 from espider.utils.tools import url_to_dict, body_to_dict, json_to_dict, headers_to_dict, cookies_to_dict, dict_to_body, \
     dict_to_json, update, search, delete, strip, replace, random_list, human_time
-from selenium import webdriver
 from espider.middlewares import RequestFilter
 
 
@@ -33,9 +31,11 @@ class Spider(object):
             json=None,
             headers=None,
             cookies=None,
+            name=None,
             use_session=False,
             **kwargs
     ):
+        self.name = name or self.__class__.__name__
         self.method = method
         if not self.method: self.method = 'POST' if data or json else 'GET'
 
@@ -57,12 +57,12 @@ class Spider(object):
         self.session.headers = self.spider.get('headers')
 
         # 加载 setting
-        self.setting = Setting()
-        self.setting.__dict__.update(self.__custom_setting__)
+        self.settings = Settings()
+        self.settings.__dict__.update(self.__custom_setting__)
 
         # 加载 downloader setting
-        self.downloader_setting = {k: v for k, v in self.setting.items() if k in Downloader.__settings__}
-        self.request_setting = {k: v for k, v in self.setting.items() if k in Request.__settings__}
+        self.downloader_setting = {k: v for k, v in self.settings.items() if k in Downloader.__settings__}
+        self.request_setting = {k: v for k, v in self.settings.items() if k in Request.__settings__}
 
         self.downloader = Downloader(
             **self.downloader_setting,
@@ -208,12 +208,8 @@ class Spider(object):
         if hasattr(response, 'cookies'):
             self.spider['cookies'] = merge_cookies(self.spider.get('cookies'), response.cookies)
 
-    @staticmethod
-    def chrome_driver(options=None):
-        return webdriver.Chrome(options=options)
-
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
-                args=None, kwarg=None, priority=None, use_session=None, **kwargs):
+                cb_args=None, cb_kwargs=None, priority=None, use_session=None, **kwargs):
 
         if use_session is None: use_session = self.use_session
         if not callback: callback = self.parse
@@ -236,8 +232,8 @@ class Spider(object):
             'priority': priority,
             'callback': callback,
             'downloader': self.downloader,
-            'args': args,
-            'kwarg': kwarg,
+            'cb_args': cb_args,
+            'cb_kwargs': cb_kwargs,
             'session': self.session if use_session else None,
             'show_detail': self.show_request_detail,
             **self.request_setting,
@@ -291,7 +287,7 @@ class Spider(object):
     def _run(self):
         result = self.start_requests()
         if isinstance(result, Generator):
-            for request in self.start_requests():
+            for request in result:
                 if isinstance(request, Request):
                     self.downloader.push(request)
                 else:
