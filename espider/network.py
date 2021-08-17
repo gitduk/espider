@@ -3,7 +3,7 @@ from collections.abc import Generator, Iterable
 import threading
 from queue import Queue
 import urllib3
-from espider.default import REQUEST_KEYS, DEFAULT_METHOD_VALUE
+from espider.settings import REQUEST_KEYS, DEFAULT_METHOD_VALUE
 from espider.parser.response import Response
 from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cookies_to_dict, json_to_dict
 import espider.utils.requests as requests
@@ -14,15 +14,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class Request(threading.Thread):
-    __settings__ = [
-        'max_retry',
-        'timeout'
-    ]
-    __DEFAULT_THREAD_VALUE__ = [
-        'name',
-        'daemon'
-    ]
-
     def __init__(self, url, method='', **kwargs):
         super().__init__()
         threading.Thread.__init__(self, name=kwargs.get('name'), daemon=kwargs.get('daemon'))
@@ -49,9 +40,6 @@ class Request(threading.Thread):
         self.is_start = False
         self.success = False
         self.error = False
-
-        # 额外参数
-        self.pocket = {}
 
         cb_args = kwargs.get('cb_args')
 
@@ -151,6 +139,8 @@ class Request(threading.Thread):
         if self.callback:
             assert isinstance(self.downloader, Downloader)
 
+            charset = response.css('meta::attr(content)').re_first('charset=(.*)')
+            if charset: response.encoding = charset
             result = self.callback(response, *self.func_args, **self.func_kwargs)
 
             if result:
@@ -184,10 +174,8 @@ class Request(threading.Thread):
 
 
 class Downloader(object):
-    __settings__ = ['wait_time', 'max_thread', 'close_countdown', 'distribute_time']
-
     def __init__(self, max_thread=None, wait_time=0, end_callback=None, **kwargs):
-        self.thread_pool = PriorityQueue()
+        self.request_pool = PriorityQueue()
         self.item_pool = Queue()
         self.end_callback = end_callback
         self.max_thread = max_thread or 10
@@ -206,12 +194,9 @@ class Downloader(object):
         # 数据管道
         self._pipelines = []
 
-        # debug
-        self._debug = False
-
     def push(self, request):
         assert isinstance(request, Request), f'task must be a {Request.__name__} object.'
-        self.thread_pool.push(request, request.priority)
+        self.request_pool.push(request, request.priority)
 
     def push_item(self, item):
         self.item_pool.put(item)
@@ -219,7 +204,7 @@ class Downloader(object):
     def _finish(self):
         finish = False
         for i in range(3):
-            if self.thread_pool.empty() and self.running_thread.empty() and self.item_pool.empty():
+            if self.request_pool.empty() and self.running_thread.empty() and self.item_pool.empty():
                 finish = True
             else:
                 finish = False
@@ -268,19 +253,18 @@ class Downloader(object):
             if self.max_thread and self.running_thread.qsize() > self.max_thread:
                 self._join_thread()
             else:
-                request = self.thread_pool.pop()
+                request = self.request_pool.pop()
                 if request:
-                    countdown = self.close_countdown
                     yield request
                 elif not self._finish():
+                    countdown = self.close_countdown
                     self._join_thread()
                 else:
-                    if countdown >= 0:
-                        if countdown < self.close_countdown:
-                            print('Wait task ...'.format(countdown + 1))
-                        time.sleep(1)
+                    if countdown > 0:
+                        print('Wait task ... {}'.format(countdown))
                         countdown -= 1
-                    elif not self._debug:
+                        time.sleep(1)
+                    elif countdown != -1 or self._close:
                         # 关闭管道
                         for pipeline in self._pipelines:
                             if hasattr(pipeline, 'close_pipeline'): pipeline.close_pipeline()
@@ -293,6 +277,9 @@ class Downloader(object):
                         msg = f'All task is done. Success: {self.count.get("Success")}, Retry: {self.count.get("Retry")}, Failed: {self.count.get("Failed")}, Error: {self.count.get("Error")}'
                         print(msg)
                         self._close = True
+                    else:
+                        time.sleep(1)
+                        print('Wait task ...')
 
             if self.distribute_item:
                 try:
@@ -335,11 +322,9 @@ class Downloader(object):
             if result: data = result
 
     def _start_request(self, request):
-
-        if request:
-            time.sleep(self.wait_time + request.retry_times * 0.1)
-            if not request.is_start: request.start()
-            self.running_thread.put(request)
+        time.sleep(self.wait_time + request.retry_times * 0.1)
+        if not request.is_start: request.start()
+        self.running_thread.put(request)
 
     def _join_thread(self):
         while not self.running_thread.empty():

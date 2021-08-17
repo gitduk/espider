@@ -459,20 +459,56 @@ class Response(object):
 
     @property
     def is_html(self):
-        content_type = self.headers.get("Content-Type", "")
-        if "text/html" in content_type:
-            return True
-        else:
+        try:
+            self.json()
+        except:
             return False
+        else:
+            return True
 
     @property
     def selector(self):
         return Selector(self.text)
 
+    def find(self, key, data=None, target_type=None):
+        return self.selector.find(key=key, data=data, target_type=target_type)
+
+    def find_map(self, map, data=None, target_type=None, **kwargs):
+        return self.selector.find_map(map, data=data, target_type=target_type, **kwargs)
+
+    def css(self, query):
+        return self.selector.css(query)
+
+    def css_map(self, query_map):
+        return self.selector.css_map(query_map)
+
+    def xpath(self, query, namespaces=None, **kwargs):
+        return self.selector.xpath(query, namespaces=namespaces, **kwargs)
+
+    def xpath_map(self, query_map, namespaces=None, **kwargs):
+        return self.selector.xpath_map(query_map, namespaces=namespaces, **kwargs)
+
+    def re(self, regex, replace_entities=True):
+        return self.selector.re(regex, replace_entities=replace_entities)
+
+    def re_map(self, regex_map, replace_entities=True):
+        return self.selector.re_map(regex_map, replace_entities=replace_entities)
+
+    def re_first(self, regex, default=None, replace_entities=True):
+        return self.selector.re_first(regex, default=default, replace_entities=replace_entities)
+
+    def re_first_map(self, regex_map, default=None, replace_entities=True):
+        return self.selector.re_first_map(regex_map, default=default, replace_entities=replace_entities)
+
+    def query_from_map(self, map: dict, **kwargs):
+        return self.selector.query_from_map(map, **kwargs)
+
     def open(self, path=None, save=False):
         self.save_html(path)
-        webbrowser.open(path or 'index.html')
-        if not save: os.system('rm -rf {}'.format(path))
+        if not path: path = 'index.html'
+        webbrowser.open(path)
+        if os.path.exists(path) and not save:
+            os.remove(path)
 
     def save_html(self, path=None):
         with open(path or 'index.html', 'w', encoding=self.encoding, errors='replace') as html:
