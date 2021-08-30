@@ -14,7 +14,7 @@ class Spider(object):
     更新 url，data，body，headers，cookies等参数，并创建请求线程
     """
 
-    __settings__ = {
+    __custom_setting__ = {
         'request': {
             'max_retry': 0,
             'timeout': None
@@ -41,7 +41,7 @@ class Spider(object):
             self.session.headers = {'User-Agent': random.choice(USER_AGENT_LIST)}
 
         # 加载 setting
-        self.settings = Settings(self.__settings__)
+        self.settings = Settings(self.__custom_setting__)
         self.request_setting = {k: v for k, v in self.settings.request.__dict__.items()}
 
         self.downloader = Downloader(
@@ -96,8 +96,8 @@ class Spider(object):
         }
         return Request(**request_kwargs)
 
-    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, args=None,
-                     kwarg=None, priority=None, use_session=False, **kwargs):
+    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, cb_args=None,
+                     cb_kwargs=None, priority=None, use_session=False, **kwargs):
 
         return self.request(
             self,
@@ -108,8 +108,8 @@ class Spider(object):
             headers=headers,
             cookies=cookies,
             callback=callback,
-            args=args,
-            kwarg=kwarg,
+            cb_args=cb_args,
+            cb_kwargs=cb_kwargs,
             priority=priority,
             use_session=use_session,
             **kwargs
@@ -128,7 +128,7 @@ class Spider(object):
         """
         yield ...
 
-    def run(self, *args, **kwargs):
+    def start(self, *args, **kwargs):
 
         if type(self.downloader).__name__ == 'type':
             self.downloader = self.downloader()
@@ -137,6 +137,9 @@ class Spider(object):
         spider_thread.start()
         self.downloader.start()
         spider_thread.join()
+
+    def run(self, *args, **kwargs):
+        self.start(*args, **kwargs)
 
     def _run(self, *args, **kwargs):
         result = self.start_requests(*args, **kwargs)
