@@ -5,6 +5,7 @@ import re as _re
 
 import chardet
 import requests.models
+from urllib.parse import urlparse, urlunparse, urljoin
 from urllib3.exceptions import (
     DecodeError, ReadTimeoutError, ProtocolError)
 from requests.structures import CaseInsensitiveDict
@@ -17,8 +18,10 @@ from requests.utils import (
     iter_slices, guess_json_utf
 )
 from requests.status_codes import codes
+from espider.utils.bs4_dammit import UnicodeDammit
 from espider.parser.selector import Selector
 from requests.models import HTTPError, REDIRECT_STATI, codes
+from w3lib.encoding import http_content_type_encoding, html_body_declared_encoding
 import webbrowser
 
 try:
@@ -88,7 +91,7 @@ class Response(object):
         self.url = None
 
         #: Encoding to decode with when accessing r.text.
-        self.encoding = None
+        self._encoding = None
 
         #: A list of :class:`Response <Response>` objects from
         #: the history of the Request. Any redirect responses will end
@@ -116,6 +119,9 @@ class Response(object):
         # for requests
         self.cost_time = 0
         self.retry_times = 0
+
+        # for selector
+        self._cached_selector = None
 
         # init response content
         if resp:
@@ -304,6 +310,47 @@ class Response(object):
             yield pending
 
     @property
+    def encoding(self):
+        """
+        编码优先级：自定义编码 > header中编码 > 页面编码 > 根据content猜测的编码
+        """
+        self._encoding = (
+                self._encoding
+                or self._headers_encoding()
+                or self._body_declared_encoding()
+        )
+        return self._encoding
+
+    @encoding.setter
+    def encoding(self, val):
+        self.__clear_cache()
+        self._encoding = val
+
+    def __clear_cache(self):
+        self.__dict__["_cached_selector"] = None
+
+    def _headers_encoding(self):
+        """
+        从headers获取头部charset编码
+        """
+        content_type = self.headers.get("Content-Type") or self.headers.get(
+            "content-type"
+        )
+        if content_type:
+            return (
+                http_content_type_encoding(content_type) or "utf-8"
+                if "application/json" in content_type
+                else None
+            )
+
+    def _body_declared_encoding(self):
+        """
+        从html xml等获取<meta charset="编码">
+        """
+
+        return html_body_declared_encoding(self.content)
+
+    @property
     def content(self):
         """Content of the response, in bytes."""
 
@@ -337,7 +384,6 @@ class Response(object):
         """
 
         # Try charset from content-type
-        content = None
         encoding = self.encoding
 
         if not self.content:
@@ -350,6 +396,14 @@ class Response(object):
         # Decode unicode from given encoding.
         try:
             content = str(self.content, encoding, errors='replace')
+            # 补全链接
+            content = self._absolute_links(content)
+            # 删除特殊字符
+            content = self._del_special_character(content)
+            # 编码矫正
+            if self.encoding and self.encoding.upper() == FAIL_ENCODING:
+                content = self._get_unicode_html(content)
+
         except (LookupError, TypeError):
             # A LookupError is raised if the encoding was not found which could
             # indicate a misspelling or similar mistake.
@@ -443,6 +497,81 @@ class Response(object):
         if release_conn is not None:
             release_conn()
 
+    def _make_absolute(self, link):
+        """Makes a given link absolute."""
+        try:
+
+            link = link.strip()
+
+            # Parse the link with stdlib.
+            parsed = urlparse(link)._asdict()
+
+            # If link is relative, then join it with base_url.
+            if not parsed["netloc"]:
+                return urljoin(self.url, link)
+
+            # Link is absolute; if it lacks a scheme, add one from base_url.
+            if not parsed["scheme"]:
+                parsed["scheme"] = urlparse(self.url).scheme
+
+                # Reconstruct the URL to incorporate the new scheme.
+                parsed = (v for v in parsed.values())
+                return urlunparse(parsed)
+
+        except Exception as e:
+            print(
+                "Invalid URL <{}> can't make absolute_link. exception: {}".format(
+                    link, e
+                )
+            )
+
+        # Link is absolute and complete with scheme; nothing to be done here.
+        return link
+
+    def _absolute_links(self, text):
+        regexs = [
+            r'(<(?i)a.*?href\s*?=\s*?["\'])(.+?)(["\'])',  # a
+            r'(<(?i)img.*?src\s*?=\s*?["\'])(.+?)(["\'])',  # img
+            r'(<(?i)link.*?href\s*?=\s*?["\'])(.+?)(["\'])',  # css
+            r'(<(?i)script.*?src\s*?=\s*?["\'])(.+?)(["\'])',  # js
+        ]
+
+        for regex in regexs:
+            def replace_href(text):
+                # html = text.group(0)
+                link = text.group(2)
+                absolute_link = self._make_absolute(link)
+
+                # return re.sub(regex, r'\1{}\3'.format(absolute_link), html) # 使用正则替换，个别字符不支持。如该网址源代码http://permit.mep.gov.cn/permitExt/syssb/xxgk/xxgk!showImage.action?dataid=0b092f8115ff45c5a50947cdea537726
+                return text.group(1) + absolute_link + text.group(3)
+
+            text = _re.sub(regex, replace_href, text, flags=_re.S)
+
+        return text
+
+    def _del_special_character(self, text):
+        """
+        删除特殊字符
+        """
+        for special_character_pattern in SPECIAL_CHARACTER_PATTERNS:
+            text = special_character_pattern.sub("", text)
+
+        return text
+
+    def _get_unicode_html(self, html):
+        if not html or not isinstance(html, bytes):
+            return html
+
+        converted = UnicodeDammit(html, is_html=True)
+        if not converted.unicode_markup:
+            raise Exception(
+                "Failed to detect encoding of article HTML, tried: %s"
+                % ", ".join(converted.tried_encodings)
+            )
+
+        html = converted.unicode_markup
+        return html
+
     @property
     def to_dict(self):
         response_dict = {
@@ -468,7 +597,9 @@ class Response(object):
 
     @property
     def selector(self):
-        return Selector(self.text)
+        if self._cached_selector is None:
+            self._cached_selector = Selector(self.text)
+        return self._cached_selector
 
     def find(self, key, data=None, target_type=None):
         return self.selector.find(key=key, data=data, target_type=target_type)
@@ -479,11 +610,17 @@ class Response(object):
     def css(self, query):
         return self.selector.css(query)
 
+    def css_first(self, query):
+        return self.selector.css(query).extract_first()
+
     def css_map(self, query_map):
         return self.selector.css_map(query_map)
 
     def xpath(self, query, namespaces=None, **kwargs):
         return self.selector.xpath(query, namespaces=namespaces, **kwargs)
+
+    def xpath_first(self, query, namespaces=None, **kwargs):
+        return self.selector.xpath(query, namespaces=namespaces, **kwargs).extract_first()
 
     def xpath_map(self, query_map, namespaces=None, **kwargs):
         return self.selector.xpath_map(query_map, namespaces=namespaces, **kwargs)
@@ -497,8 +634,8 @@ class Response(object):
     def re_first(self, regex, default=None, replace_entities=True):
         return self.selector.re_first(regex, default=default, replace_entities=replace_entities)
 
-    def re_first_map(self, regex_map, default=None, replace_entities=True):
-        return self.selector.re_first_map(regex_map, default=default, replace_entities=replace_entities)
+    def re_map_first(self, regex_map, default=None, replace_entities=True):
+        return self.selector.re_map_first(regex_map, default=default, replace_entities=replace_entities)
 
     def query_from_map(self, map: dict, **kwargs):
         return self.selector.query_from_map(map, **kwargs)

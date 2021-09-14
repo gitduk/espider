@@ -1,6 +1,6 @@
 class DownloaderSetting(object):
     def __init__(self):
-        self.max_thread = 10
+        self.max_thread = 1
         self.wait_time = 0
         self.close_countdown = 3
         self.distribute_item = True
@@ -28,8 +28,8 @@ class Settings(object):
             else:
                 self.request.__dict__.update({k: v for k, v in setting.items() if k in self.request.__dict__.keys()})
 
-            if 'downloader' in setting.keys():
-                self.downloader.__dict__.update(setting.get('downloader'))
+            if 'download' in setting.keys():
+                self.downloader.__dict__.update(setting.get('download'))
             else:
                 self.downloader.__dict__.update(
                     {k: v for k, v in setting.items() if k in self.downloader.__dict__.keys()}
@@ -38,7 +38,7 @@ class Settings(object):
             raise TypeError('setting must be dict or Setting object.')
 
     def __repr__(self):
-        return 'request: {}\ndownloader: {}'.format(self.request.__dict__, self.downloader.__dict__)
+        return 'request: {}\ndownload: {}'.format(self.request.__dict__, self.downloader.__dict__)
 
 
 DEFAULT_METHOD_VALUE = [

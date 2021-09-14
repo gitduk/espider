@@ -19,8 +19,8 @@ class Spider(object):
             'max_retry': 0,
             'timeout': None
         },
-        'downloader': {
-            'max_thread': 10,
+        'download': {
+            'max_thread': 1,
             'wait_time': 0,
             'close_countdown': 3,
             'distribute_item': True

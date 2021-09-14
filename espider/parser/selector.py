@@ -331,7 +331,7 @@ class Selector(object):
         """
         return next(iflatten(self.re(regex, replace_entities=replace_entities)), default)
 
-    def re_first_map(self, regex_map, default=None, replace_entities=True):
+    def re_map_first(self, regex_map, default=None, replace_entities=True):
         return self._query_from_map(self.re_first, regex_map, default=default, replace_entities=replace_entities)
 
     def query_from_map(self, map: dict, **kwargs):
