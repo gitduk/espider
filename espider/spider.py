@@ -1,4 +1,4 @@
-import threading
+import asyncio
 import random
 import time
 from collections.abc import Generator
@@ -7,6 +7,7 @@ from espider.parser.response import Response
 from espider.settings import Settings, USER_AGENT_LIST
 from espider.utils import requests
 from espider.utils.tools import human_time
+from espider.network import request
 
 
 class Spider(object):
@@ -25,6 +26,10 @@ class Spider(object):
             'close_countdown': 3,
             'distribute_item': True
         }
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36'
     }
 
     def __init__(
@@ -73,7 +78,6 @@ class Spider(object):
             self._next_priority_index += 1
 
         if not priority: priority = self._callback_priority_map.get(callback.__name__)
-
         if not headers and hasattr(self, 'headers'): headers = self.headers
         if not cookies and hasattr(self, 'cookies'): cookies = self.cookies
 
@@ -85,8 +89,6 @@ class Spider(object):
             'json': json,
             'headers': headers or {'User-Agent': random.choice(USER_AGENT_LIST)},
             'cookies': cookies,
-            'priority': priority,
-            'callback': callback,
             'downloader': self.downloader,
             'cb_args': cb_args,
             'cb_kwargs': cb_kwargs,
@@ -94,7 +96,7 @@ class Spider(object):
             'show_detail': self.show_request_detail,
             **kwargs,
         }
-        return Request(**request_kwargs)
+        return request(**request_kwargs), priority, callback
 
     def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, cb_args=None,
                      cb_kwargs=None, priority=None, use_session=False, **kwargs):
@@ -130,13 +132,15 @@ class Spider(object):
 
     def start(self, *args, **kwargs):
 
-        if type(self.downloader).__name__ == 'type':
-            self.downloader = self.downloader()
+        for r, priority in self.start_requests(*args, **kwargs):
+            self.downloader.request_pool.push(r, priority)
 
-        spider_thread = threading.Thread(target=self._run, args=args, kwargs=kwargs)
-        spider_thread.start()
-        self.downloader.start()
-        spider_thread.join()
+        loop = asyncio.get_event_loop()
+        while self.downloader.status != 'Closed':
+            req = self.downloader.request_pool.pop()
+            task = asyncio.ensure_future(req.run())
+            task.add_done_callback(req.callback)
+            loop.run_until_complete(task)
 
     def run(self, *args, **kwargs):
         self.start(*args, **kwargs)

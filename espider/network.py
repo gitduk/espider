@@ -9,8 +9,16 @@ from espider.utils.tools import args_split, PriorityQueue, headers_to_dict, cook
 import espider.utils.requests as requests
 from espider.middlewares import BaseMiddleware
 from espider.pipelines import BasePipeline
+import aiohttp
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+async def request(url, method='GET', data=None, json=None, headers=None, cookies=None, callback=None, cb_args=None,
+                  cb_kwargs=None):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            return response
 
 
 class Request(threading.Thread):
