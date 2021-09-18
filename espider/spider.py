@@ -64,6 +64,9 @@ class Spider(object):
         # log
         self.show_request_detail = False
 
+        # event loop
+        self.loop = asyncio.get_event_loop()
+
         self.prepare()
 
     def request(self, url=None, method=None, data=None, json=None, headers=None, cookies=None, callback=None,
@@ -98,25 +101,6 @@ class Spider(object):
         }
         return request(**request_kwargs), priority, callback
 
-    def form_request(self, url=None, data=None, json=None, headers=None, cookies=None, callback=None, cb_args=None,
-                     cb_kwargs=None, priority=None, use_session=False, **kwargs):
-
-        return self.request(
-            self,
-            url=url,
-            method='POST',
-            data=data,
-            json=json,
-            headers=headers,
-            cookies=cookies,
-            callback=callback,
-            cb_args=cb_args,
-            cb_kwargs=cb_kwargs,
-            priority=priority,
-            use_session=use_session,
-            **kwargs
-        )
-
     def request_from_response(self, response):
         isinstance(response, Response)
         return self.request(**response.request_kwargs)
@@ -135,12 +119,11 @@ class Spider(object):
         for r, priority in self.start_requests(*args, **kwargs):
             self.downloader.request_pool.push(r, priority)
 
-        loop = asyncio.get_event_loop()
         while self.downloader.status != 'Closed':
             req = self.downloader.request_pool.pop()
             task = asyncio.ensure_future(req.run())
             task.add_done_callback(req.callback)
-            loop.run_until_complete(task)
+            self.loop.run_until_complete(task)
 
     def run(self, *args, **kwargs):
         self.start(*args, **kwargs)
